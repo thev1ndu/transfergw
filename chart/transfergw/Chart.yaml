@@ -1,0 +1,17 @@
+apiVersion: v2
+name: transfergw
+description: Kubernetes operator for migrating Ingress to Gateway APIs
+type: application
+version: 1.0.0
+appVersion: "1beta1"
+keywords:
+  - kubernetes
+  - ingress
+  - gateway-api
+  - migration
+home: https://github.com/example/transfergw
+sources:
+  - https://github.com/example/transfergw
+maintainers:
+  - name: Example
+    email: admin@example.com

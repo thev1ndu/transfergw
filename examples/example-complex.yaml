@@ -1,0 +1,118 @@
+---
+# Complex example: Migrate 500+ ingresses with annotation translation to Istio
+# Multi-team coordination, Slack alerts, webhook hooks
+apiVersion: transfergw.t-1.dev/v1beta1
+kind: TransferGW
+metadata:
+  name: enterprise-istio-migration
+  namespace: gateway-system
+  labels:
+    team: platform
+    version: v1beta1
+spec:
+  # Select ingresses across multiple namespaces and teams
+  selector:
+    namespaces:
+      - "api-*"
+      - "microservices-*"
+      - "backend-*"
+    ingressSelector:
+      matchExpressions:
+        - key: migrate-wave
+          operator: In
+          values: ["1", "2", "3"]
+
+  # Convert to Istio with annotation translation
+  conversion:
+    gatewayClass: istio
+    targetNamespace: istio-system
+    generateGateway: true
+
+    # Template for generated Gateway resources
+    gatewayTemplate:
+      labels:
+        app: istio-gateway
+        migration: "true"
+      annotations:
+        istio.io/rev: "default"
+
+    # Map nginx annotations to Istio policies
+    annotationPolicy:
+      preserve:
+        - "cert-manager.io/.*"
+        - "monitoring.example.com/.*"
+      translate:
+        "nginx.ingress.kubernetes.io/rate-limit": "transfergw.t-1.dev/rate-limit-policy"
+        "nginx.ingress.kubernetes.io/auth-type": "transfergw.t-1.dev/auth-policy"
+        "nginx.ingress.kubernetes.io/proxy-body-size": "transfergw.t-1.dev/request-size-policy"
+        "nginx.ingress.kubernetes.io/rewrite-target": "transfergw.t-1.dev/rewrite-policy"
+      drop:
+        - "nginx.ingress.kubernetes.io/deprecated-.*"
+
+    tlsHandling: preserve
+    validationMode: strict
+
+  # Gradual staged rollout with manual progression
+  rollout:
+    mode: gradual
+    strategy: time-based
+    paused: false
+    gradual:
+      totalDuration: 48h
+      step: 10
+
+  # Comprehensive monitoring with Slack alerts
+  monitoring:
+    enabled: true
+    interval: 2m
+    metrics:
+      - latency
+      - error-rate
+      - throughput
+      - connection-reset
+    thresholds:
+      errorRate: 0.02  # stricter for production
+      latencyMs: 100
+      latencyPercentile: p99
+      connectionResets: 0.005
+      throughputDelta: 0.1
+    comparisonWindow: 10m
+    alerting:
+      enabled: true
+      slackChannel: "#platform-migrations"
+      webhookUrl: "https://alerts.example.com/webhook"
+
+  # Lifecycle with hooks for validation and notification
+  lifecycle:
+    pauseOriginalIngress: true
+    backupOriginal: true
+    validateConversion: true
+    autoComplete: true
+    cleanupOnSuccess: false
+    hooks:
+      preConversion:
+        webhook: "https://hooks.example.com/pre-conversion"
+      postConversion:
+        webhook: "https://hooks.example.com/post-conversion"
+      preRollout:
+        webhook: "https://hooks.example.com/pre-rollout"
+      postRollout:
+        webhook: "https://hooks.example.com/post-rollout"
+
+---
+# Namespace where gateway resources will be created
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: istio-system
+  labels:
+    gateway-api: "true"
+
+---
+# GatewayClass for Istio
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: istio
+spec:
+  controllerName: istio.io/gateway-controller

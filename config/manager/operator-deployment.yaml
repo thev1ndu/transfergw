@@ -1,0 +1,235 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transfergw-controller
+  namespace: gateway-system
+  labels:
+    app: transfergw-controller
+    version: v1beta1
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: transfergw-controller
+  template:
+    metadata:
+      labels:
+        app: transfergw-controller
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: transfergw-controller
+      containers:
+        - name: controller
+          image: transfergw-controller:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - /manager
+          args:
+            - --leader-elect
+            - --metrics-bind-address=:8080
+            - --health-probe-bind-address=:8081
+          ports:
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+            - name: webhook
+              containerPort: 9443
+              protocol: TCP
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: LOG_LEVEL
+              value: "info"
+            - name: ENABLE_WEBHOOKS
+              value: "true"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: webhook-certs
+              mountPath: /tmp/k8s-webhook-server/serving-certs
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: webhook-certs
+          secret:
+            secretName: transfergw-webhook-certs
+            optional: true
+        - name: tmp
+          emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - transfergw-controller
+                topologyKey: kubernetes.io/hostname
+      terminationGracePeriodSeconds: 30
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: transfergw-controller-metrics
+  namespace: gateway-system
+  labels:
+    app: transfergw-controller
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+  selector:
+    app: transfergw-controller
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: transfergw-webhook-service
+  namespace: gateway-system
+  labels:
+    app: transfergw-controller
+spec:
+  type: ClusterIP
+  ports:
+    - name: webhook
+      port: 443
+      targetPort: 9443
+      protocol: TCP
+  selector:
+    app: transfergw-controller
+
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: transfergw-validating-webhook-configuration
+  labels:
+    app: transfergw-controller
+webhooks:
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: transfergw-webhook-service
+        namespace: gateway-system
+        path: /validate-transfergw-t-1-dev-v1beta1-transfergw
+      caBundle: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCi4uLgotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
+    failurePolicy: Fail
+    name: vtransfergw.kb.io
+    namespaceSelector:
+      matchExpressions:
+        - key: control-plane
+          operator: DoesNotExist
+    rules:
+      - apiGroups:
+          - transfergw.t-1.dev
+        apiVersions:
+          - v1beta1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - transfergws
+        scope: Namespaced
+    sideEffects: None
+    timeoutSeconds: 10
+
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: transfergw-mutating-webhook-configuration
+  labels:
+    app: transfergw-controller
+webhooks:
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: transfergw-webhook-service
+        namespace: gateway-system
+        path: /mutate-transfergw-t-1-dev-v1beta1-transfergw
+      caBundle: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCi4uLgotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
+    failurePolicy: Fail
+    name: mtransfergw.kb.io
+    namespaceSelector:
+      matchExpressions:
+        - key: control-plane
+          operator: DoesNotExist
+    rules:
+      - apiGroups:
+          - transfergw.t-1.dev
+        apiVersions:
+          - v1beta1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - transfergws
+        scope: Namespaced
+    sideEffects: None
+    timeoutSeconds: 10
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: transfergw-controller
+  namespace: gateway-system
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: transfergw-controller

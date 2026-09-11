@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: transfergw-controller-metrics
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: transfergw-controller
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: metrics
+      port: {{ .Values.service.metricsPort }}
+      targetPort: 8080
+      protocol: TCP
+  selector:
+    app: transfergw-controller
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: transfergw-webhook-service
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: transfergw-controller
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: webhook
+      port: 443
+      targetPort: {{ .Values.webhookPort }}
+      protocol: TCP
+  selector:
+    app: transfergw-controller

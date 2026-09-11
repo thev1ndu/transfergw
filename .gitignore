@@ -1,0 +1,49 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.so.*
+*.dylib
+bin/
+dist/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+cover.out
+*.coverprofile
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build directories
+build/bin/
+build/dist/
+
+# Test reports
+test-results/
+*.junit.xml
+
+# Local configuration
+.env
+.env.local
+kubeconfig
+config/local/
+
+# Temporary files
+*.tmp
+*.temp

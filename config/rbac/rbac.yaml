@@ -1,0 +1,143 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: transfergw-controller
+  namespace: gateway-system
+  labels:
+    app: transfergw
+    version: v1beta1
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: transfergw-controller
+  labels:
+    app: transfergw
+rules:
+  # Core API resources
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+
+  # Ingress resources
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses/status"]
+    verbs: ["get", "patch", "update"]
+
+  # IngressClass
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingressclasses"]
+    verbs: ["get", "list", "watch"]
+
+  # Gateway API resources
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gateways", "httproutes", "grpcroutes", "tlsroutes"]
+    verbs: ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gateways/status", "httproutes/status", "grpcroutes/status", "tlsroutes/status"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gatewayapis", "gatewayclasses"]
+    verbs: ["get", "list", "watch"]
+
+  # Policy resources (for Kubernetes Gateway API experimental policies)
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["backendtlspolicies", "authorizationpolicies"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+
+  # Cert-manager integration
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates"]
+    verbs: ["get", "list", "watch", "create", "patch", "update"]
+
+  # TransferGW resources
+  - apiGroups: ["transfergw.t-1.dev"]
+    resources: ["transfergws"]
+    verbs: ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
+  - apiGroups: ["transfergw.t-1.dev"]
+    resources: ["transfergws/status"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["transfergw.t-1.dev"]
+    resources: ["transfergws/finalizers"]
+    verbs: ["update"]
+
+  # ConfigMap for storing conversion rules and policies
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+    resourceNames: ["transfergw-config"]
+
+  # Events for audit trail
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+
+  # Services (for metrics, webhooks)
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch"]
+
+  # Deployment for the controller itself
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: transfergw-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: transfergw-controller
+subjects:
+  - kind: ServiceAccount
+    name: transfergw-controller
+    namespace: gateway-system
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: transfergw-controller
+  namespace: gateway-system
+rules:
+  # Leader election
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    resourceNames: ["transfergw-leader-election"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create"]
+
+  # Secrets for storing credentials
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+
+  # Leases for leader election
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: transfergw-controller
+  namespace: gateway-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: transfergw-controller
+subjects:
+  - kind: ServiceAccount
+    name: transfergw-controller
+    namespace: gateway-system

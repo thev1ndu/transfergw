@@ -1,0 +1,54 @@
+---
+# Simple example: Migrate all ingresses in prod namespace to Envoy Gateway
+# kubectl apply -f example-simple.yaml
+apiVersion: transfergw.t-1.dev/v1beta1
+kind: TransferGW
+metadata:
+  name: simple-prod-migration
+  namespace: gateway-system
+spec:
+  # Select all ingresses in prod namespace with label migrate=true
+  selector:
+    namespaces:
+      - prod
+    ingressSelector:
+      matchLabels:
+        migrate: "true"
+
+  # Convert to Envoy Gateway
+  conversion:
+    gatewayClass: envoy
+    targetNamespace: gateway-system
+    generateGateway: true
+    tlsHandling: preserve
+    validationMode: strict
+
+  # Gradual canary rollout
+  rollout:
+    mode: canary
+    strategy: percentage
+    canary:
+      initialPercentage: 25
+      increment: 25
+      stepDuration: 1h
+      maxDuration: 4h
+
+  # Monitor health and auto-rollback
+  monitoring:
+    enabled: true
+    interval: 5m
+    metrics:
+      - latency
+      - error-rate
+    thresholds:
+      errorRate: 0.05
+      latencyMs: 150
+      latencyPercentile: p95
+
+  # Preserve original, auto-complete on success
+  lifecycle:
+    pauseOriginalIngress: true
+    backupOriginal: true
+    validateConversion: true
+    autoComplete: true
+    cleanupOnSuccess: false

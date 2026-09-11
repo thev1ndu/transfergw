@@ -1,0 +1,68 @@
+name: Publish Helm Chart
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'toGateway/chart/**'
+      - '.github/workflows/helm-publish.yaml'
+  workflow_run:
+    workflows: ["Build and Push Image"]
+    branches: [main]
+    types:
+      - completed
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'latest'
+
+      - name: Lint Helm chart
+        run: |
+          cd toGateway
+          helm lint chart/transfergw
+
+      - name: Create chart package
+        run: |
+          cd toGateway
+          mkdir -p helm-releases
+          helm package chart/transfergw -d helm-releases
+
+      - name: Login to GHCR
+        run: |
+          echo ${{ secrets.GITHUB_TOKEN }} | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Push chart to GHCR
+        run: |
+          cd toGateway
+          for chart in helm-releases/*.tgz; do
+            helm push "$chart" oci://ghcr.io/${{ github.repository_owner }}/helm-charts
+          done
+
+      - name: Update Helm chart repo index
+        run: |
+          cd toGateway
+          mkdir -p gh-pages
+          cp helm-releases/*.tgz gh-pages/
+          cd gh-pages
+          helm repo index . --url https://github.com/${{ github.repository }}/releases/download/helm-chart-latest/
+          cd ..
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: toGateway/gh-pages
+          cname: charts.transfergw.dev

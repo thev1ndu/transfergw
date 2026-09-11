@@ -1,0 +1,78 @@
+namespace: gateway-system
+createNamespace: true
+
+image:
+  repository: transfergw-controller
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+logLevel: info
+enableWebhooks: true
+
+metricsBindAddress: ":8080"
+healthProbeBindAddress: ":8081"
+webhookPort: 9443
+
+service:
+  type: ClusterIP
+  metricsPort: 8080
+  webhookPort: 443
+
+leaderElection:
+  enabled: true
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+  capabilities:
+    drop:
+      - ALL
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - transfergw-controller
+          topologyKey: kubernetes.io/hostname
+
+terminationGracePeriodSeconds: 30
+
+livenessProbe:
+  initialDelaySeconds: 15
+  periodSeconds: 20
+
+readinessProbe:
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+rbac:
+  create: true
+
+serviceAccount:
+  create: true
+  name: transfergw-controller
+
+crd:
+  install: true

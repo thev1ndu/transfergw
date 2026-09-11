@@ -1,0 +1,455 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: transfergw.t-1.dev
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.11.1
+spec:
+  group: transfergw.t-1.dev
+  names:
+    kind: TransferGW
+    listKind: TransferGWList
+    plural: transfergws
+    shortNames:
+      - tgw
+  scope: Namespaced
+  versions:
+    - name: v1beta1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: TransferGW manages ingress to gateway API migration lifecycle
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required:
+                - selector
+                - conversion
+                - rollout
+              properties:
+                selector:
+                  type: object
+                  description: Selects which Ingress resources to migrate
+                  properties:
+                    namespaces:
+                      type: array
+                      items:
+                        type: string
+                      description: Namespace patterns to include (supports wildcards)
+                      example: ["prod-*", "staging"]
+                    ingressSelector:
+                      type: object
+                      description: Label selector for Ingress resources
+                      properties:
+                        matchLabels:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        matchExpressions:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              key:
+                                type: string
+                              operator:
+                                type: string
+                              values:
+                                type: array
+                                items:
+                                  type: string
+                    ingressClasses:
+                      type: array
+                      items:
+                        type: string
+                      description: Specific ingress classes to migrate
+
+                conversion:
+                  type: object
+                  description: Configuration for ingress to gateway conversion
+                  required:
+                    - gatewayClass
+                  properties:
+                    gatewayClass:
+                      type: string
+                      description: Target GatewayClass (envoy, istio, kong, aws-alb, gcp-cloud-armor)
+                      minLength: 1
+                    targetNamespace:
+                      type: string
+                      description: Namespace where Gateway and HTTPRoute resources are created
+                      default: gateway-system
+                    generateGateway:
+                      type: boolean
+                      description: Auto-create Gateway resource if not exists
+                      default: true
+                    gatewayTemplate:
+                      type: object
+                      description: Template for generated Gateway resource
+                      properties:
+                        labels:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        annotations:
+                          type: object
+                          additionalProperties:
+                            type: string
+                    annotationPolicy:
+                      type: object
+                      description: How to handle ingress annotations during conversion
+                      properties:
+                        preserve:
+                          type: array
+                          items:
+                            type: string
+                          description: Regex patterns of annotations to preserve
+                          example: ["cert-manager.io/.*", "auth.example.com/.*"]
+                        translate:
+                          type: object
+                          additionalProperties:
+                            type: string
+                          description: Map old annotation names to new policy names
+                          example:
+                            "nginx.ingress.kubernetes.io/rate-limit": "transfergw.t-1.dev/rate-limit"
+                        drop:
+                          type: array
+                          items:
+                            type: string
+                          description: Regex patterns of annotations to remove
+                    tlsHandling:
+                      type: string
+                      enum: ["preserve", "regenerate", "manual"]
+                      default: preserve
+                      description: How to handle TLS certificates
+                    validationMode:
+                      type: string
+                      enum: ["strict", "permissive", "disabled"]
+                      default: strict
+                      description: Validation strictness level
+
+                rollout:
+                  type: object
+                  description: Gradual rollout strategy
+                  required:
+                    - mode
+                  properties:
+                    mode:
+                      type: string
+                      enum: ["immediate", "gradual", "canary"]
+                      default: canary
+                    strategy:
+                      type: string
+                      enum: ["percentage", "time-based", "manual"]
+                      default: percentage
+                    paused:
+                      type: boolean
+                      default: false
+                      description: Pause the rollout
+                    canary:
+                      type: object
+                      properties:
+                        initialPercentage:
+                          type: integer
+                          minimum: 0
+                          maximum: 100
+                          default: 25
+                          description: Initial traffic percentage to gateway
+                        increment:
+                          type: integer
+                          minimum: 1
+                          maximum: 100
+                          default: 25
+                          description: Traffic percentage increase per step
+                        maxIncrement:
+                          type: integer
+                          minimum: 1
+                          maximum: 100
+                          default: 50
+                        stepDuration:
+                          type: string
+                          default: 1h
+                          description: Duration between increment steps (e.g., 1h, 30m)
+                        maxDuration:
+                          type: string
+                          description: Maximum total canary duration
+                    gradual:
+                      type: object
+                      properties:
+                        totalDuration:
+                          type: string
+                          default: 24h
+                          description: Total time to reach 100%
+                        step:
+                          type: integer
+                          default: 10
+                          description: Percentage step size
+
+                monitoring:
+                  type: object
+                  description: Health checks and automatic rollback
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: true
+                    interval:
+                      type: string
+                      default: 5m
+                      description: Health check interval
+                    metrics:
+                      type: array
+                      items:
+                        type: string
+                        enum: ["latency", "error-rate", "throughput", "connection-reset"]
+                      default: ["latency", "error-rate"]
+                    thresholds:
+                      type: object
+                      properties:
+                        errorRate:
+                          type: number
+                          minimum: 0
+                          maximum: 1
+                          default: 0.05
+                          description: Error rate threshold (0.05 = 5%)
+                        latencyMs:
+                          type: integer
+                          default: 150
+                          description: Latency threshold in milliseconds
+                        latencyPercentile:
+                          type: string
+                          enum: ["p50", "p75", "p90", "p95", "p99"]
+                          default: p95
+                        connectionResets:
+                          type: number
+                          minimum: 0
+                          maximum: 1
+                          default: 0.01
+                        throughputDelta:
+                          type: number
+                          description: Throughput delta percentage threshold
+                    comparisonWindow:
+                      type: string
+                      default: 5m
+                      description: Evaluation window for metrics
+                    alerting:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                          default: true
+                        webhookUrl:
+                          type: string
+                          description: Optional webhook for alerts
+                        slackChannel:
+                          type: string
+                          description: Optional Slack channel
+
+                lifecycle:
+                  type: object
+                  description: Cleanup and validation behavior
+                  properties:
+                    pauseOriginalIngress:
+                      type: boolean
+                      default: true
+                      description: Pause original ingress during rollout
+                    backupOriginal:
+                      type: boolean
+                      default: true
+                      description: Keep backup of original ingress
+                    validateConversion:
+                      type: boolean
+                      default: true
+                      description: Reject if conversion has warnings
+                    autoComplete:
+                      type: boolean
+                      default: true
+                      description: Mark complete when reaching 100%
+                    cleanupOnSuccess:
+                      type: boolean
+                      default: false
+                      description: Delete original ingress after migration
+                    hooks:
+                      type: object
+                      properties:
+                        preConversion:
+                          type: object
+                          description: Run before conversion
+                          properties:
+                            webhook:
+                              type: string
+                        postConversion:
+                          type: object
+                          description: Run after conversion
+                          properties:
+                            webhook:
+                              type: string
+                        preRollout:
+                          type: object
+                          description: Run before rollout
+                          properties:
+                            webhook:
+                              type: string
+                        postRollout:
+                          type: object
+                          description: Run after rollout complete
+                          properties:
+                            webhook:
+                              type: string
+
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: ["Pending", "Analyzing", "Converting", "Deploying", "Canary", "Complete", "Failed"]
+                  description: Current migration phase
+                completionPercentage:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                trafficRouting:
+                  type: object
+                  properties:
+                    ingress:
+                      type: integer
+                      description: Percentage of traffic on ingress
+                    gateway:
+                      type: integer
+                      description: Percentage of traffic on gateway
+                processed:
+                  type: object
+                  properties:
+                    total:
+                      type: integer
+                    converted:
+                      type: integer
+                    pending:
+                      type: integer
+                    failed:
+                      type: integer
+                    failed-resources:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          namespace:
+                            type: string
+                          error:
+                            type: string
+                resources:
+                  type: object
+                  properties:
+                    gateways:
+                      type: integer
+                    httpRoutes:
+                      type: integer
+                    tlsPolicies:
+                      type: integer
+                    backendPolicies:
+                      type: integer
+                metrics:
+                  type: object
+                  description: Comparison metrics between ingress and gateway
+                  properties:
+                    latency:
+                      type: object
+                      properties:
+                        ingress:
+                          type: string
+                        gateway:
+                          type: string
+                        delta:
+                          type: string
+                        status:
+                          type: string
+                    errorRate:
+                      type: object
+                      properties:
+                        ingress:
+                          type: number
+                        gateway:
+                          type: number
+                        delta:
+                          type: number
+                        status:
+                          type: string
+                    throughput:
+                      type: object
+                      properties:
+                        ingress:
+                          type: string
+                        gateway:
+                          type: string
+                        delta:
+                          type: string
+                        status:
+                          type: string
+                issues:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      ingress:
+                        type: string
+                      issue:
+                        type: string
+                      severity:
+                        type: string
+                        enum: ["info", "warning", "error"]
+                      recommendation:
+                        type: string
+                rollbackReady:
+                  type: boolean
+                lastHealthCheck:
+                  type: string
+                  format: date-time
+                nextHealthCheck:
+                  type: string
+                  format: date-time
+                lastTransitionTime:
+                  type: string
+                  format: date-time
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                        enum: ["True", "False", "Unknown"]
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Progress
+          type: integer
+          jsonPath: .status.completionPercentage
+        - name: Ingress
+          type: integer
+          jsonPath: .status.trafficRouting.ingress
+        - name: Gateway
+          type: integer
+          jsonPath: .status.trafficRouting.gateway
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
