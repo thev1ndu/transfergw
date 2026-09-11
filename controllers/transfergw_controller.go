@@ -24,15 +24,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	gatewayexamplecomv1beta1 "github.com/example/transfergw/api/v1beta1"
-	"github.com/example/transfergw/conversion"
+	gatewayexamplecomv1beta1 "github.com/thev1ndu/transfergw/api/v1beta1"
+	"github.com/thev1ndu/transfergw/conversion"
 )
 
 // TransferGWReconciler reconciles a TransferGW object
 type TransferGWReconciler struct {
 	client.Client
-	Scheme            *runtime.Scheme
-	ConversionEngine  *conversion.Engine
+	Scheme           *runtime.Scheme
+	ConversionEngine *conversion.Engine
 }
 
 // +kubebuilder:rbac:groups=transfergw.t-1.dev,resources=transfergws,verbs=create;delete;deletecollection;get;list;patch;update;watch

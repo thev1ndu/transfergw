@@ -3,8 +3,10 @@
 # Variables
 IMG ?= transfergw-controller:latest
 REGISTRY ?= docker.io/example
-CONTROLLER_GEN ?= $(ENVTEST)/controller-gen
-ENVTEST ?= $(shell pwd)/bin/envtest
+LOCALBIN ?= $(shell pwd)/bin
+CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
+ENVTEST ?= $(LOCALBIN)/setup-envtest
+KUSTOMIZE ?= $(LOCALBIN)/kustomize
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
@@ -26,8 +28,8 @@ vet: ## Run go vet against code.
 	go vet ./...
 
 .PHONY: test
-test: manifests generate fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use 1.26 -p path)" go test ./... -coverprofile=cover.out
+test: fmt vet ## Run tests.
+	go test ./... -coverprofile=cover.out
 
 .PHONY: test-integration
 test-integration: test ## Run integration tests.
@@ -38,16 +40,16 @@ test-e2e: ## Run end-to-end tests (requires cluster).
 	go test ./tests/e2e -v -count=1
 
 .PHONY: build
-build: manifests generate fmt vet ## Build manager binary.
-	go build -o bin/manager main.go
+build: fmt vet ## Build manager binary.
+	go build -o bin/manager ./cmd/main.go
 
 .PHONY: run
-run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./main.go --leader-elect=false
+run: fmt vet ## Run a controller from your host.
+	go run ./cmd/main.go --leader-elect=false
 
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.
-	docker build -t ${REGISTRY}/${IMG} .
+	docker build -f build/Dockerfile -t ${REGISTRY}/${IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -75,16 +77,15 @@ uninstall-crd: manifests kustomize ## Uninstall CRD from the K8s cluster specifi
 
 .PHONY: controller-gen
 controller-gen: ## Download controller-gen locally if necessary.
-	test -s $(CONTROLLER_GEN) || { curl -Ss "https://raw.githubusercontent.com/kubernetes-sigs/controller-tools/master/hack/install.sh" | sh -s -- $(subst controller-gen,,$(CONTROLLER_GEN)); }
+	test -s $(CONTROLLER_GEN) || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@latest
 
 .PHONY: kustomize
 kustomize: ## Download kustomize locally if necessary.
-	test -s $(KUSTOMIZE) || { curl -Ss "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash -s -- $(subst kustomize,,$KUSTOMIZE); }
+	test -s $(KUSTOMIZE) || GOBIN=$(LOCALBIN) go install sigs.k8s.io/kustomize/kustomize/v5@latest
 
 .PHONY: envtest
 envtest: ## Download envtest-setup locally if necessary.
-	test -d $(ENVTEST) || mkdir -p $(ENVTEST)
-	test -f $(ENVTEST)/setup-envtest.sh || curl -Ss https://raw.githubusercontent.com/kubernetes-sigs/controller-runtime/master/hack/setup-envtest.sh | bash -s -- latest
+	test -s $(ENVTEST) || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 
 .PHONY: clean
 clean: ## Clean build artifacts.

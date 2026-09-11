@@ -9,9 +9,9 @@ keywords:
   - ingress
   - gateway-api
   - migration
-home: https://github.com/example/transfergw
+home: https://github.com/thev1ndu/transfergw
 sources:
-  - https://github.com/example/transfergw
+  - https://github.com/thev1ndu/transfergw
 maintainers:
   - name: Example
     email: admin@example.com

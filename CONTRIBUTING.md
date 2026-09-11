@@ -19,7 +19,7 @@ All contributors are expected to follow professional and respectful behavior in 
 
 ```bash
 # Clone the repository
-git clone https://github.com/example/transfergw.git
+git clone https://github.com/thev1ndu/transfergw.git
 cd transfergw
 
 # Install dependencies

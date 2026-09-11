@@ -40,21 +40,25 @@ func (e *Engine) RegisterTranslator(annotation string, t Translator) {
 }
 
 type RateLimitTranslator struct{}
+
 func (t *RateLimitTranslator) Translate(key, value string) (string, map[string]interface{}, error) {
 	return key, map[string]interface{}{}, nil
 }
 
 type RewriteTranslator struct{}
+
 func (t *RewriteTranslator) Translate(key, value string) (string, map[string]interface{}, error) {
 	return key, map[string]interface{}{}, nil
 }
 
 type AuthTranslator struct{}
+
 func (t *AuthTranslator) Translate(key, value string) (string, map[string]interface{}, error) {
 	return key, map[string]interface{}{}, nil
 }
 
 type CertManagerTranslator struct{}
+
 func (t *CertManagerTranslator) Translate(key, value string) (string, map[string]interface{}, error) {
 	return key, map[string]interface{}{}, nil
 }

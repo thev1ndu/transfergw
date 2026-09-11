@@ -351,24 +351,24 @@ type TrafficRoutingStatus struct {
 
 // ProcessedStatus shows conversion statistics
 type ProcessedStatus struct {
-	Total   int32 `json:"total,omitempty"`
+	Total     int32 `json:"total,omitempty"`
 	Converted int32 `json:"converted,omitempty"`
-	Pending int32 `json:"pending,omitempty"`
-	Failed  int32 `json:"failed,omitempty"`
+	Pending   int32 `json:"pending,omitempty"`
+	Failed    int32 `json:"failed,omitempty"`
 }
 
 // ResourcesStatus shows created gateway resources
 type ResourcesStatus struct {
-	Gateways      int32 `json:"gateways,omitempty"`
-	HTTPRoutes    int32 `json:"httpRoutes,omitempty"`
-	TLSPolicies   int32 `json:"tlsPolicies,omitempty"`
+	Gateways        int32 `json:"gateways,omitempty"`
+	HTTPRoutes      int32 `json:"httpRoutes,omitempty"`
+	TLSPolicies     int32 `json:"tlsPolicies,omitempty"`
 	BackendPolicies int32 `json:"backendPolicies,omitempty"`
 }
 
 // MetricsStatus shows comparison metrics
 type MetricsStatus struct {
-	Latency   *MetricComparison `json:"latency,omitempty"`
-	ErrorRate *MetricComparison `json:"errorRate,omitempty"`
+	Latency    *MetricComparison `json:"latency,omitempty"`
+	ErrorRate  *MetricComparison `json:"errorRate,omitempty"`
 	Throughput *MetricComparison `json:"throughput,omitempty"`
 }
 

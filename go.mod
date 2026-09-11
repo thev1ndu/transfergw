@@ -1,4 +1,4 @@
-module github.com/example/transfergw
+module github.com/thev1ndu/transfergw
 
 go 1.26.0
 

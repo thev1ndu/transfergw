@@ -33,9 +33,9 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 
-	gatewayexamplecomv1beta1 "github.com/example/transfergw/api/v1beta1"
-	"github.com/example/transfergw/controllers"
-	"github.com/example/transfergw/conversion"
+	gatewayexamplecomv1beta1 "github.com/thev1ndu/transfergw/api/v1beta1"
+	"github.com/thev1ndu/transfergw/controllers"
+	"github.com/thev1ndu/transfergw/conversion"
 )
 
 var (

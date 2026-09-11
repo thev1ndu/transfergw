@@ -149,7 +149,7 @@ helm install eg envoy-gateway/gateway -n envoy-gateway-system --create-namespace
 
 ```bash
 # Clone or download
-git clone https://github.com/example/transfergw.git
+git clone https://github.com/thev1ndu/transfergw.git
 cd transfergw
 
 # Build operator image
