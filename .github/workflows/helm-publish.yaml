@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - 'toGateway/chart/**'
+      - 'chart/**'
       - '.github/workflows/helm-publish.yaml'
   workflow_run:
     workflows: ["Build and Push Image"]
@@ -30,13 +30,10 @@ jobs:
           version: 'latest'
 
       - name: Lint Helm chart
-        run: |
-          cd toGateway
-          helm lint chart/transfergw
+        run: helm lint chart/transfergw
 
       - name: Create chart package
         run: |
-          cd toGateway
           mkdir -p helm-releases
           helm package chart/transfergw -d helm-releases
 
@@ -46,23 +43,20 @@ jobs:
 
       - name: Push chart to GHCR
         run: |
-          cd toGateway
           for chart in helm-releases/*.tgz; do
             helm push "$chart" oci://ghcr.io/${{ github.repository_owner }}/helm-charts
           done
 
       - name: Update Helm chart repo index
         run: |
-          cd toGateway
           mkdir -p gh-pages
           cp helm-releases/*.tgz gh-pages/
           cd gh-pages
           helm repo index . --url https://github.com/${{ github.repository }}/releases/download/helm-chart-latest/
-          cd ..
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: toGateway/gh-pages
+          publish_dir: gh-pages
           cname: charts.transfergw.dev
