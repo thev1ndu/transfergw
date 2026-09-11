@@ -380,7 +380,7 @@ Controller reconciles:
 ## Files Delivered
 
 ```
-/Users/thevinduw/Downloads/tw1/toGateway/
+transfergw/
 ├── IDEA.md                    # Architecture & Design (SIG-Network compliant)
 ├── README.md                  # Comprehensive project documentation
 ├── SETUP.md                   # Installation and quickstart guide

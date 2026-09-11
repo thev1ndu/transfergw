@@ -5,7 +5,7 @@ Production-ready Kubernetes operator for migrating Ingress resources to Gateway 
 ## Project Structure
 
 ```
-toGateway/
+transfergw/
 ├── IDEA.md                          # Architecture and design overview
 ├── README.md                         # This file
 ├── SETUP.md                          # Installation and quickstart guide
@@ -150,7 +150,7 @@ helm install eg envoy-gateway/gateway -n envoy-gateway-system --create-namespace
 ```bash
 # Clone or download
 git clone https://github.com/example/transfergw.git
-cd toGateway
+cd transfergw
 
 # Build operator image
 docker build -t my-registry/transfergw-controller:latest .

@@ -87,7 +87,7 @@ git push origin feature/your-feature-name
 ## Project Structure
 
 ```
-toGateway/
+transfergw/
 ├── api/v1beta1/              # CRD and types
 ├── cmd/                       # Entry point
 ├── controllers/               # Controller logic
