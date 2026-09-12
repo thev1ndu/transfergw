@@ -76,24 +76,31 @@ controller actually does today versus what's designed but not yet built.
 **1. Ingress → Gateway API conversion**
 - [x] 1.1 Ingress selection by namespace, label, and ingress class
 - [x] 1.2 Ingress → Gateway/HTTPRoute conversion
-- [x] 1.3 Orphaned route cleanup
+- [x] 1.3 Orphaned route (and GRPCRoute) cleanup
+- [x] 1.4 Named Service backend ports resolved via a live lookup, instead of requiring a port number on the Ingress
+- [x] 1.5 `backend-protocol: GRPC` (nginx, AGIC) generates a `GRPCRoute` instead of an `HTTPRoute`
+- [x] 1.6 nginx weight-based canary Ingress pairs merged into one `HTTPRoute` with two weighted `backendRefs`
+- [x] 1.7 Overlapping host+path across selected Ingresses (different backends, same match) reported as a warning
 
 **2. Annotation translation**
 - [x] 2.1 Full ingress-nginx annotation coverage (real filters where Gateway API has one, explicit guidance where it doesn't)
 - [x] 2.2 cert-manager annotation translation
 - [x] 2.3 Azure Application Gateway Ingress Controller (AGIC) annotation coverage
 - [x] 2.4 Rule-level translation (session affinity → `sessionPersistence`, timeout annotations → `timeouts`) alongside filter-level translation, so a translated annotation doesn't have to look like the original mechanism — it has to produce the same effect
+- [x] 2.5 Multi-annotation translation (CORS: `enable-cors` + its `cors-*` siblings combine into one core `HTTPRouteFilterCORS`, instead of each annotation only ever seeing itself in isolation)
 
 **3. Rollout & safety**
 - [x] 3.1 Percentage-based traffic rollout (immediate, gradual, canary)
 - [x] 3.2 Health-based automatic rollback (Prometheus-backed threshold breach detection)
 - [x] 3.3 Webhook alerting on rollback (per-migration via `spec.monitoring.alerting`, or a chart-wide default)
 - [x] 3.4 Lifecycle hooks (`spec.lifecycle.hooks`: PreConversion/PreRollout gate progress on a 2xx response; PostConversion/PostRollout notify without blocking)
+- [x] 3.5 Validating webhook (off by default — rejects an unknown `gatewayClass`, a `gatewayName` already owned by another `TransferGW`, or warns on an empty selector, before the first reconcile)
 
 **4. Planned**
 - [ ] 4.1 Multi-gateway support (Istio, Kong, cloud LBs)
 - [ ] 4.2 Multi-cluster migrations
 - [ ] 4.3 Slack alerting integration
+- [ ] 4.4 ALB annotation coverage (`alb.ingress.kubernetes.io/*`)
 
 ## License
 
