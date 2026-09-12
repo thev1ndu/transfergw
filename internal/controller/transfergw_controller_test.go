@@ -431,3 +431,128 @@ func TestRolloutPercentage(t *testing.T) {
 		t.Errorf("fresh canary = %d, want the 25%% initial share", got)
 	}
 }
+
+func TestReconcileRequireApprovalHoldsAtApprovedPercentage(t *testing.T) {
+	migration := testMigration(func(m *transfergwv1beta1.TransferGW) {
+		m.Spec.Rollout.RequireApproval = true
+		m.Spec.Rollout.ApprovedPercentage = 0
+	})
+	r, c := newReconciler(t,
+		namespace("demo"), namespace("transfergw"),
+		testIngress("sample-nginx", "demo", map[string]string{"migrate": "true"}),
+		migration,
+	)
+
+	reconcileOnce(t, r, migration)
+
+	got := &transfergwv1beta1.TransferGW{}
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(migration), got); err != nil {
+		t.Fatalf("re-reading migration: %v", err)
+	}
+
+	// mode: immediate would normally set this to 100; approval gating holds
+	// it at ApprovedPercentage (0) instead.
+	if got.Status.CompletionPercentage != 0 {
+		t.Errorf("completionPercentage = %d, want 0 (held pending approval)", got.Status.CompletionPercentage)
+	}
+	if got.Status.PendingPlan == nil {
+		t.Fatal("expected status.pendingPlan to be populated when requireApproval is set")
+	}
+	if got.Status.PendingPlan.NextPercentage != 100 {
+		t.Errorf("pendingPlan.nextPercentage = %d, want 100 (what immediate mode would set)",
+			got.Status.PendingPlan.NextPercentage)
+	}
+	if got.Status.PendingPlan.CurrentPercentage != 0 {
+		t.Errorf("pendingPlan.currentPercentage = %d, want 0", got.Status.PendingPlan.CurrentPercentage)
+	}
+
+	var added bool
+	for _, c := range got.Status.PendingPlan.RouteChanges {
+		if c.Action == "add" && c.Route == "demo/sample-nginx" {
+			added = true
+		}
+	}
+	if !added {
+		t.Errorf("expected an add route change for demo/sample-nginx, got %+v", got.Status.PendingPlan.RouteChanges)
+	}
+
+	// The HTTPRoute itself is still created regardless of the traffic
+	// percentage being held: routes reflect the Ingress state, not the
+	// rollout step (see rolloutPercentage's comment on DNS/LB steering).
+	route := &gatewayv1.HTTPRoute{}
+	if err := c.Get(context.Background(),
+		types.NamespacedName{Name: "sample-nginx", Namespace: "demo"}, route); err != nil {
+		t.Errorf("expected the HTTPRoute to exist even while the percentage is held: %v", err)
+	}
+}
+
+func TestReconcileApprovingPercentageAdvancesRollout(t *testing.T) {
+	migration := testMigration(func(m *transfergwv1beta1.TransferGW) {
+		m.Spec.Rollout.RequireApproval = true
+		m.Spec.Rollout.ApprovedPercentage = 100
+	})
+	r, c := newReconciler(t,
+		namespace("demo"), namespace("transfergw"),
+		testIngress("sample-nginx", "demo", map[string]string{"migrate": "true"}),
+		migration,
+	)
+
+	reconcileOnce(t, r, migration)
+
+	got := &transfergwv1beta1.TransferGW{}
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(migration), got); err != nil {
+		t.Fatalf("re-reading migration: %v", err)
+	}
+	if got.Status.CompletionPercentage != 100 {
+		t.Errorf("completionPercentage = %d, want 100 once approved", got.Status.CompletionPercentage)
+	}
+	if got.Status.Phase != phaseComplete {
+		t.Errorf("phase = %q, want %q", got.Status.Phase, phaseComplete)
+	}
+}
+
+func TestReconcileWithoutRequireApprovalLeavesPendingPlanNil(t *testing.T) {
+	migration := testMigration()
+	r, c := newReconciler(t,
+		namespace("demo"), namespace("transfergw"),
+		testIngress("sample-nginx", "demo", map[string]string{"migrate": "true"}),
+		migration,
+	)
+
+	reconcileOnce(t, r, migration)
+
+	got := &transfergwv1beta1.TransferGW{}
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(migration), got); err != nil {
+		t.Fatalf("re-reading migration: %v", err)
+	}
+	if got.Status.PendingPlan != nil {
+		t.Errorf("pendingPlan = %+v, want nil when requireApproval is unset", got.Status.PendingPlan)
+	}
+}
+
+func TestReconcileSecondPassReportsNoRouteChanges(t *testing.T) {
+	migration := testMigration(func(m *transfergwv1beta1.TransferGW) {
+		m.Spec.Rollout.RequireApproval = true
+		m.Spec.Rollout.ApprovedPercentage = 100
+	})
+	r, c := newReconciler(t,
+		namespace("demo"), namespace("transfergw"),
+		testIngress("sample-nginx", "demo", map[string]string{"migrate": "true"}),
+		migration,
+	)
+
+	reconcileOnce(t, r, migration)
+	reconcileOnce(t, r, migration)
+
+	got := &transfergwv1beta1.TransferGW{}
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(migration), got); err != nil {
+		t.Fatalf("re-reading migration: %v", err)
+	}
+	if got.Status.PendingPlan == nil {
+		t.Fatal("expected status.pendingPlan to still be populated")
+	}
+	if len(got.Status.PendingPlan.RouteChanges) != 0 {
+		t.Errorf("routeChanges = %+v, want none on an unchanged second reconcile",
+			got.Status.PendingPlan.RouteChanges)
+	}
+}

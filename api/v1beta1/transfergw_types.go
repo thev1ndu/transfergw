@@ -137,6 +137,23 @@ type RolloutSpec struct {
 	// Gradual specifies gradual rollout settings
 	// +kubebuilder:validation:Optional
 	Gradual *GradualSpec `json:"gradual,omitempty"`
+
+	// RequireApproval holds the rollout at ApprovedPercentage instead of
+	// advancing on the schedule's own timing. The schedule's intended next
+	// step is still computed every reconcile and published on
+	// status.pendingPlan, so it can be reviewed before it takes effect.
+	// +kubebuilder:validation:Optional
+	RequireApproval bool `json:"requireApproval,omitempty"`
+
+	// ApprovedPercentage is the traffic percentage a human has signed off on.
+	// Only consulted when RequireApproval is true: the rollout never exceeds
+	// this value even if immediate/gradual/canary would otherwise set a
+	// higher one. Bump this (e.g. to match status.pendingPlan.nextPercentage)
+	// to let the rollout advance.
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	ApprovedPercentage int32 `json:"approvedPercentage,omitempty"`
 }
 
 // CanarySpec specifies canary rollout settings
@@ -329,6 +346,12 @@ type TransferGWStatus struct {
 	// Metrics shows comparison metrics
 	MetricsStatus *MetricsStatus `json:"metrics,omitempty"`
 
+	// PendingPlan previews the rollout schedule's next step and records this
+	// reconcile's route changes. Only populated when spec.rollout.requireApproval
+	// is set - a migration that doesn't use approval gating advances on its own,
+	// so there is nothing pending to show.
+	PendingPlan *PendingPlanStatus `json:"pendingPlan,omitempty"`
+
 	// Issues shows conversion warnings
 	// +kubebuilder:validation:MaxItems=100
 	Issues []ConversionIssue `json:"issues,omitempty"`
@@ -366,6 +389,44 @@ type ProcessedStatus struct {
 	Converted int32 `json:"converted,omitempty"`
 	Pending   int32 `json:"pending,omitempty"`
 	Failed    int32 `json:"failed,omitempty"`
+}
+
+// PendingPlanStatus previews the next rollout step and records the route
+// changes this reconcile made, so a spec.rollout.requireApproval migration
+// can be reviewed before it advances further.
+type PendingPlanStatus struct {
+	// NextPercentage is what the rollout schedule would set the Gateway's
+	// traffic share to on the next reconcile, ignoring RequireApproval.
+	NextPercentage int32 `json:"nextPercentage,omitempty"`
+
+	// CurrentPercentage is what's actually live right now - the same value
+	// as status.completionPercentage, repeated here for a single-glance diff
+	// against NextPercentage.
+	CurrentPercentage int32 `json:"currentPercentage,omitempty"`
+
+	// RouteChanges lists the HTTPRoute/GRPCRoute adds, updates and removals
+	// this reconcile made to keep the generated routes in sync with the
+	// selected Ingresses. These always apply regardless of RequireApproval:
+	// only the traffic percentage above is gated, since a Gateway API route
+	// existing does not by itself move client traffic - see rolloutPercentage
+	// in the controller.
+	// +kubebuilder:validation:MaxItems=100
+	RouteChanges []RouteChange `json:"routeChanges,omitempty"`
+}
+
+// RouteChange records one HTTPRoute/GRPCRoute add, update or removal made
+// while reconciling a TransferGW.
+type RouteChange struct {
+	// Action is add, modify or remove.
+	// +kubebuilder:validation:Enum=add;modify;remove
+	Action string `json:"action"`
+
+	// Route is the namespace/name of the affected HTTPRoute or GRPCRoute.
+	Route string `json:"route"`
+
+	// Detail optionally explains the change.
+	// +kubebuilder:validation:Optional
+	Detail string `json:"detail,omitempty"`
 }
 
 // ResourcesStatus shows created gateway resources

@@ -74,6 +74,7 @@ TransferGW is under active development. The table below reflects what the
 controller actually does today versus what's designed but not yet built.
 
 **1. Ingress → Gateway API conversion**
+
 - [x] 1.1 Ingress selection by namespace, label, and ingress class
 - [x] 1.2 Ingress → Gateway/HTTPRoute conversion
 - [x] 1.3 Orphaned route (and GRPCRoute) cleanup
@@ -83,6 +84,7 @@ controller actually does today versus what's designed but not yet built.
 - [x] 1.7 Overlapping host+path across selected Ingresses (different backends, same match) reported as a warning
 
 **2. Annotation translation**
+
 - [x] 2.1 Full ingress-nginx annotation coverage (real filters where Gateway API has one, explicit guidance where it doesn't)
 - [x] 2.2 cert-manager annotation translation
 - [x] 2.3 Azure Application Gateway Ingress Controller (AGIC) annotation coverage
@@ -91,16 +93,20 @@ controller actually does today versus what's designed but not yet built.
 - [x] 2.6 AWS Load Balancer Controller (ALB) annotation coverage (`alb.ingress.kubernetes.io/*`), incl. `backend-protocol: GRPC` producing a `GRPCRoute`
 
 **3. Rollout & safety**
+
 - [x] 3.1 Percentage-based traffic rollout (immediate, gradual, canary)
 - [x] 3.2 Health-based automatic rollback (Prometheus-backed threshold breach detection)
 - [x] 3.3 Webhook alerting on rollback (per-migration via `spec.monitoring.alerting`, or a chart-wide default)
 - [x] 3.4 Lifecycle hooks (`spec.lifecycle.hooks`: PreConversion/PreRollout gate progress on a 2xx response; PostConversion/PostRollout notify without blocking)
 - [x] 3.5 Validating webhook (off by default — rejects an unknown `gatewayClass`, a `gatewayName` already owned by another `TransferGW`, or warns on an empty selector, before the first reconcile)
+- [x] 3.6 Declarative plan/diff (`status.pendingPlan`: next rollout percentage + per-route add/modify/remove, computed every reconcile; `spec.rollout.requireApproval` + `approvedPercentage` gate advancing on an explicit bump) — a plan → apply split entirely through the CRD, no separate CLI. See [docs/DEMO.md](docs/DEMO.md).
 
 **4. Planned**
+
 - [ ] 4.1 Multi-gateway support (Istio, Kong, cloud LBs)
 - [ ] 4.2 Multi-cluster migrations
 - [ ] 4.3 Slack alerting integration
+- [ ] 4.4 Declarative plan/diff (`status.pendingPlan`: next rollout percentage + per-route add/modify/remove, computed every reconcile; optional `spec.rollout.requireApproval` gates advancing on an explicit `approvedPercentage` bump) — a plan → apply split entirely through the CRD, no separate CLI
 
 ## License
 

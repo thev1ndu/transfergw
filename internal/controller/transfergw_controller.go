@@ -202,10 +202,11 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	status.Phase = phaseConverting
 
 	var (
-		issues    []transfergwv1beta1.ConversionIssue
-		converted int32
-		failed    int32
-		desired   = map[string]struct{}{}
+		issues       []transfergwv1beta1.ConversionIssue
+		converted    int32
+		failed       int32
+		desired      = map[string]struct{}{}
+		routeChanges []transfergwv1beta1.RouteChange
 	)
 
 	canaryNames, canaryForPrimary := canary.Pair(ingresses)
@@ -234,7 +235,8 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 
 		if result.GRPCRoute != nil {
-			if err := r.applyGRPCRoute(ctx, migration, result.GRPCRoute); err != nil {
+			op, err := r.applyGRPCRoute(ctx, migration, result.GRPCRoute)
+			if err != nil {
 				failed++
 				issues = append(issues, transfergwv1beta1.ConversionIssue{
 					Ingress:  ing.Namespace + "/" + ing.Name,
@@ -242,6 +244,9 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 					Issue:    fmt.Sprintf("applying GRPCRoute: %v", err),
 				})
 				continue
+			}
+			if change, ok := routeChangeFor(op, result.GRPCRoute.Namespace, result.GRPCRoute.Name); ok {
+				routeChanges = append(routeChanges, change)
 			}
 			desired[result.GRPCRoute.Namespace+"/"+result.GRPCRoute.Name] = struct{}{}
 			converted++
@@ -276,7 +281,8 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			}
 		}
 
-		if err := r.applyRoute(ctx, migration, result.Route); err != nil {
+		op, err := r.applyRoute(ctx, migration, result.Route)
+		if err != nil {
 			failed++
 			issues = append(issues, transfergwv1beta1.ConversionIssue{
 				Ingress:  ing.Namespace + "/" + ing.Name,
@@ -285,17 +291,21 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			})
 			continue
 		}
+		if change, ok := routeChangeFor(op, result.Route.Namespace, result.Route.Name); ok {
+			routeChanges = append(routeChanges, change)
+		}
 
 		desired[result.Route.Namespace+"/"+result.Route.Name] = struct{}{}
 		converted++
 	}
 
-	pruned, err := r.pruneOrphanedRoutes(ctx, migration, desired)
+	pruned, prunedChanges, err := r.pruneOrphanedRoutes(ctx, migration, desired)
 	if err != nil {
 		logger.Error(err, "pruning orphaned routes")
 	} else if pruned > 0 {
 		logger.Info("pruned routes whose Ingress no longer matches", "count", pruned)
 	}
+	routeChanges = append(routeChanges, prunedChanges...)
 
 	total := int32(len(ingresses))
 	status.ProcessedStatus = &transfergwv1beta1.ProcessedStatus{
@@ -327,6 +337,15 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		percentage = 0
 	}
 
+	// requireApproval holds the rollout at a human-approved percentage
+	// instead of advancing on the schedule's own timing. The schedule's
+	// unclamped result is kept as scheduledPercentage so it can be published
+	// on status.pendingPlan before it takes effect.
+	scheduledPercentage := percentage
+	if migration.Spec.Rollout.RequireApproval && percentage > migration.Spec.Rollout.ApprovedPercentage {
+		percentage = migration.Spec.Rollout.ApprovedPercentage
+	}
+
 	// Health only says something useful while traffic is genuinely split: at
 	// 0% there is nothing on the Gateway path to measure, and at 100% there is
 	// no Ingress path left to compare against.
@@ -349,6 +368,16 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		Ingress: 100 - percentage,
 	}
 	status.RollbackReady = converted > 0
+
+	if migration.Spec.Rollout.RequireApproval {
+		status.PendingPlan = &transfergwv1beta1.PendingPlanStatus{
+			NextPercentage:    scheduledPercentage,
+			CurrentPercentage: percentage,
+			RouteChanges:      routeChanges,
+		}
+	} else {
+		status.PendingPlan = nil
+	}
 
 	switch {
 	case breach != nil:
@@ -499,7 +528,7 @@ func (r *TransferGWReconciler) applyRoute(
 	ctx context.Context,
 	migration *transfergwv1beta1.TransferGW,
 	desired *gatewayv1.HTTPRoute,
-) error {
+) (controllerutil.OperationResult, error) {
 	route := &gatewayv1.HTTPRoute{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      desired.Name,
@@ -507,7 +536,7 @@ func (r *TransferGWReconciler) applyRoute(
 		},
 	}
 
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
+	return controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
 		if route.Labels == nil {
 			route.Labels = map[string]string{}
 		}
@@ -520,7 +549,6 @@ func (r *TransferGWReconciler) applyRoute(
 		}
 		return nil
 	})
-	return err
 }
 
 // applyGRPCRoute is applyRoute's GRPCRoute counterpart, for an Ingress marked
@@ -529,7 +557,7 @@ func (r *TransferGWReconciler) applyGRPCRoute(
 	ctx context.Context,
 	migration *transfergwv1beta1.TransferGW,
 	desired *gatewayv1.GRPCRoute,
-) error {
+) (controllerutil.OperationResult, error) {
 	route := &gatewayv1.GRPCRoute{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      desired.Name,
@@ -537,7 +565,7 @@ func (r *TransferGWReconciler) applyGRPCRoute(
 		},
 	}
 
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
+	return controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
 		if route.Labels == nil {
 			route.Labels = map[string]string{}
 		}
@@ -550,7 +578,25 @@ func (r *TransferGWReconciler) applyGRPCRoute(
 		}
 		return nil
 	})
-	return err
+}
+
+// routeChangeFor translates a CreateOrUpdate result into a RouteChange entry,
+// or reports ok=false when nothing actually changed (OperationResultNone),
+// so an untouched route doesn't clutter status.pendingPlan every reconcile.
+func routeChangeFor(op controllerutil.OperationResult, namespace, name string) (transfergwv1beta1.RouteChange, bool) {
+	var action string
+	switch op {
+	case controllerutil.OperationResultCreated:
+		action = "add"
+	case controllerutil.OperationResultUpdated:
+		action = "modify"
+	default:
+		return transfergwv1beta1.RouteChange{}, false
+	}
+	return transfergwv1beta1.RouteChange{
+		Action: action,
+		Route:  namespace + "/" + name,
+	}, true
 }
 
 // pruneOrphanedRoutes deletes generated HTTPRoutes and GRPCRoutes whose
@@ -559,12 +605,13 @@ func (r *TransferGWReconciler) pruneOrphanedRoutes(
 	ctx context.Context,
 	migration *transfergwv1beta1.TransferGW,
 	desired map[string]struct{},
-) (int, error) {
+) (int, []transfergwv1beta1.RouteChange, error) {
 	pruned := 0
+	var changes []transfergwv1beta1.RouteChange
 
 	httpRoutes := &gatewayv1.HTTPRouteList{}
 	if err := r.List(ctx, httpRoutes, client.MatchingLabels{managedByLabel: migration.Name}); err != nil {
-		return pruned, err
+		return pruned, changes, err
 	}
 	for i := range httpRoutes.Items {
 		route := &httpRoutes.Items[i]
@@ -572,14 +619,18 @@ func (r *TransferGWReconciler) pruneOrphanedRoutes(
 			continue
 		}
 		if err := r.Delete(ctx, route); err != nil && !apierrors.IsNotFound(err) {
-			return pruned, err
+			return pruned, changes, err
 		}
+		changes = append(changes, transfergwv1beta1.RouteChange{
+			Action: "remove",
+			Route:  route.Namespace + "/" + route.Name,
+		})
 		pruned++
 	}
 
 	grpcRoutes := &gatewayv1.GRPCRouteList{}
 	if err := r.List(ctx, grpcRoutes, client.MatchingLabels{managedByLabel: migration.Name}); err != nil {
-		return pruned, err
+		return pruned, changes, err
 	}
 	for i := range grpcRoutes.Items {
 		route := &grpcRoutes.Items[i]
@@ -587,12 +638,16 @@ func (r *TransferGWReconciler) pruneOrphanedRoutes(
 			continue
 		}
 		if err := r.Delete(ctx, route); err != nil && !apierrors.IsNotFound(err) {
-			return pruned, err
+			return pruned, changes, err
 		}
+		changes = append(changes, transfergwv1beta1.RouteChange{
+			Action: "remove",
+			Route:  route.Namespace + "/" + route.Name,
+		})
 		pruned++
 	}
 
-	return pruned, nil
+	return pruned, changes, nil
 }
 
 // rolloutPercentage reports how much traffic the Gateway should be taking.
