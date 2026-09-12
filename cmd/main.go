@@ -32,6 +32,7 @@ import (
 	gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 
 	gatewayexamplecomv1beta1 "github.com/thev1ndu/transfergw/api/v1beta1"
+	"github.com/thev1ndu/transfergw/internal/alert"
 	"github.com/thev1ndu/transfergw/internal/controller"
 	"github.com/thev1ndu/transfergw/internal/conversion"
 	"github.com/thev1ndu/transfergw/internal/health"
@@ -77,11 +78,16 @@ func main() {
 	var probeAddr string
 	var webhookPort int
 	var prometheusURL string
+	var defaultWebhookURL string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&prometheusURL, "prometheus-url", os.Getenv("TRANSFERGW_PROMETHEUS_URL"),
 		"Base URL of a Prometheus query API, e.g. http://prometheus.monitoring.svc:9090. "+
 			"Health-based automatic rollback is disabled when this is empty.")
+	flag.StringVar(&defaultWebhookURL, "default-webhook-url", os.Getenv("TRANSFERGW_DEFAULT_WEBHOOK_URL"),
+		"Webhook URL notified on a health rollback for any TransferGW that leaves "+
+			"spec.monitoring.alerting unset. A TransferGW that sets its own alerting "+
+			"config, including explicitly disabling it, always overrides this.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
@@ -113,11 +119,17 @@ func main() {
 		setupLog.Info("health-based rollback enabled", "prometheusURL", prometheusURL)
 	}
 
+	if defaultWebhookURL != "" {
+		setupLog.Info("default rollback alert webhook configured", "webhookUrl", defaultWebhookURL)
+	}
+
 	if err = (&controller.TransferGWReconciler{
-		Client:           mgr.GetClient(),
-		Scheme:           mgr.GetScheme(),
-		ConversionEngine: conversionEngine,
-		MetricsSource:    metricsSource,
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		ConversionEngine:  conversionEngine,
+		MetricsSource:     metricsSource,
+		Alerter:           alert.NewWebhookNotifier(),
+		DefaultWebhookURL: defaultWebhookURL,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "TransferGW")
 		os.Exit(1)

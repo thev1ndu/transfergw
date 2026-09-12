@@ -61,6 +61,10 @@ spec:
               value: {{ .Values.logLevel | quote }}
             - name: ENABLE_WEBHOOKS
               value: {{ .Values.enableWebhooks | quote }}
+            {{- if .Values.alerting.enabled }}
+            - name: TRANSFERGW_DEFAULT_WEBHOOK_URL
+              value: {{ .Values.alerting.webhookUrl | quote }}
+            {{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           resources:

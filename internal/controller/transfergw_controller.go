@@ -38,6 +38,7 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	transfergwv1beta1 "github.com/thev1ndu/transfergw/api/v1beta1"
+	"github.com/thev1ndu/transfergw/internal/alert"
 	"github.com/thev1ndu/transfergw/internal/conversion"
 	"github.com/thev1ndu/transfergw/internal/health"
 )
@@ -92,6 +93,16 @@ type TransferGWReconciler struct {
 	// MetricsSource is optional. Without one, health comparison is skipped and
 	// a migration behaves exactly as it did before rollback support existed.
 	MetricsSource health.MetricsSource
+
+	// Alerter delivers a notification when a health rollback happens. Optional:
+	// a migration with spec.monitoring.alerting.enabled but a nil Alerter just
+	// skips notifying, the same as leaving alerting unconfigured.
+	Alerter alert.Notifier
+
+	// DefaultWebhookURL is used for a migration that leaves
+	// spec.monitoring.alerting unset entirely. A migration that sets it
+	// explicitly (including Enabled: false) always overrides this.
+	DefaultWebhookURL string
 
 	warnNoMetricsSource sync.Once
 }
@@ -253,6 +264,7 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		msg := fmt.Sprintf("Rolled back to %d%%: %s", rollbackPercentage, breach)
 		setCondition(status, "Ready", metav1.ConditionFalse, "HealthRollback", msg)
 		setCondition(status, conditionRolledBack, metav1.ConditionTrue, "ThresholdBreached", msg)
+		r.sendRollbackAlert(ctx, migration, msg)
 	case total == 0:
 		status.Phase = phaseAnalyzing
 		setCondition(status, "Ready", metav1.ConditionFalse, "NoMatchingIngresses",
@@ -701,6 +713,45 @@ func hasCondition(status *transfergwv1beta1.TransferGWStatus, condType string) b
 		}
 	}
 	return false
+}
+
+// sendRollbackAlert notifies a webhook about a health rollback. A migration
+// that sets spec.monitoring.alerting is always honored exactly as written
+// (including an explicit Enabled: false, which must suppress alerting even
+// when a cluster-wide default is configured). A migration that leaves
+// alerting unset falls back to DefaultWebhookURL, so a cluster operator can
+// set one default in the chart instead of repeating it on every TransferGW.
+//
+// A delivery failure is logged, not returned: the rollback already happened
+// and is already recorded in status, so a webhook that's down or rejects the
+// request should not make Reconcile report an error and get retried with
+// backoff over something reconciling can't fix.
+func (r *TransferGWReconciler) sendRollbackAlert(ctx context.Context, migration *transfergwv1beta1.TransferGW, message string) {
+	if r.Alerter == nil {
+		return
+	}
+
+	webhookURL := r.DefaultWebhookURL
+	if m := migration.Spec.Monitoring; m != nil && m.Alerting != nil {
+		if !m.Alerting.Enabled {
+			return
+		}
+		webhookURL = m.Alerting.WebhookUrl
+	}
+	if webhookURL == "" {
+		return
+	}
+
+	err := r.Alerter.Notify(ctx, webhookURL, alert.Event{
+		Migration: migration.Namespace + "/" + migration.Name,
+		Phase:     phaseRolledBack,
+		Reason:    "ThresholdBreached",
+		Message:   message,
+		Time:      time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		log.FromContext(ctx).Error(err, "sending rollback alert webhook")
+	}
 }
 
 // rollbackReason recovers the recorded breach message for logging while held.

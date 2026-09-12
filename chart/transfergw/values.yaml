@@ -19,6 +19,13 @@ resources:
 logLevel: info
 enableWebhooks: true
 
+# Cluster-wide default alerting webhook, notified on a health rollback for
+# any TransferGW that leaves spec.monitoring.alerting unset. A TransferGW
+# that sets its own alerting config always overrides this.
+alerting:
+  enabled: false
+  webhookUrl: ""
+
 metricsBindAddress: ":8080"
 healthProbeBindAddress: ":8081"
 webhookPort: 9443
