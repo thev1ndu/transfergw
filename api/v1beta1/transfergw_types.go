@@ -73,6 +73,14 @@ type ConversionSpec struct {
 	// +kubebuilder:validation:Default=true
 	GenerateGateway bool `json:"generateGateway,omitempty"`
 
+	// GatewayName overrides the name of the Gateway HTTPRoutes attach to.
+	// Defaults to "<TransferGW name>-gateway", a Gateway this migration owns.
+	// Set this to attach to an existing, independently managed Gateway
+	// instead (typically combined with generateGateway: false, since
+	// TransferGW should not take ownership of a Gateway it didn't create).
+	// +kubebuilder:validation:Optional
+	GatewayName string `json:"gatewayName,omitempty"`
+
 	// AnnotationPolicy specifies how to handle ingress annotations
 	// +kubebuilder:validation:Optional
 	AnnotationPolicy *AnnotationPolicySpec `json:"annotationPolicy,omitempty"`

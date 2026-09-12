@@ -160,7 +160,10 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		targetNS = migration.Namespace
 	}
 
-	gatewayName := migration.Name + "-gateway"
+	gatewayName := migration.Spec.Conversion.GatewayName
+	if gatewayName == "" {
+		gatewayName = migration.Name + "-gateway"
+	}
 	var gatewaysCreated int32
 
 	if migration.Spec.Conversion.GenerateGateway {

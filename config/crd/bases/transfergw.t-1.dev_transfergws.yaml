@@ -88,6 +88,14 @@ spec:
                     description: GatewayClass is the target gateway class
                     minLength: 1
                     type: string
+                  gatewayName:
+                    description: |-
+                      GatewayName overrides the name of the Gateway HTTPRoutes attach to.
+                      Defaults to "<TransferGW name>-gateway", a Gateway this migration owns.
+                      Set this to attach to an existing, independently managed Gateway
+                      instead (typically combined with generateGateway: false, since
+                      TransferGW should not take ownership of a Gateway it didn't create).
+                    type: string
                   generateGateway:
                     description: GenerateGateway auto-creates Gateway resource if
                       missing
