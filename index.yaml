@@ -1,11 +1,17 @@
 apiVersion: v1
 entries:
   transfergw:
-  - apiVersion: v2
+  - annotations:
+      artifacthub.io/category: networking
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Documentation
+          url: https://github.com/thev1ndu/transfergw/tree/main/docs
+    apiVersion: v2
     appVersion: 1beta1
-    created: "2026-09-12T07:30:08.988352932Z"
+    created: "2026-09-12T07:32:21.301038485Z"
     description: Kubernetes operator for migrating Ingress to Gateway APIs
-    digest: f619b6151b24a0ce926655cb79ca7ef6f9fd7479db3261d27b5f63c1a7b091ec
+    digest: 29cea956bc83efb75d92c04f1cc141c8700b2364bcef77bbaddc2a7dd3cfdb6c
     home: https://github.com/thev1ndu/transfergw
     keywords:
     - kubernetes
@@ -20,6 +26,6 @@ entries:
     - https://github.com/thev1ndu/transfergw
     type: application
     urls:
-    - https://github.com/thev1ndu/transfergw/releases/download/helm-chart-latest/transfergw-1.0.0.tgz
+    - https://thev1ndu.github.io/transfergw/transfergw-1.0.0.tgz
     version: 1.0.0
-generated: "2026-09-12T07:30:08.987390749Z"
+generated: "2026-09-12T07:32:21.300247592Z"
