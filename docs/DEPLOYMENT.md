@@ -4,7 +4,7 @@
 
 ### Container Image
 - **Registry:** GitHub Container Registry (GHCR)
-- **Repository:** `ghcr.io/thev1ndu/transfergw`
+- **Repository:** `thev1ndu/transfergw`
 - **Tags:** `latest`, git commit SHA, version tags (v*)
 - **Built via:** GitHub Actions workflow on every push to main
 
@@ -42,7 +42,7 @@ helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
 helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
   --namespace transfergw \
   --create-namespace \
-  --set image.repository=ghcr.io/thev1ndu/transfergw \
+  --set image.repository=thev1ndu/transfergw \
   --set image.tag=latest \
   --set replicaCount=3 \
   --set resources.limits.memory=2Gi
@@ -55,7 +55,7 @@ helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
   --namespace transfergw \
   --create-namespace \
   -f chart/transfergw/examples/values-prod.yaml \
-  --set image.repository=ghcr.io/thev1ndu/transfergw \
+  --set image.repository=thev1ndu/transfergw \
   --set image.tag=latest
 ```
 
@@ -66,7 +66,7 @@ helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
   --namespace transfergw \
   --create-namespace \
   -f chart/transfergw/examples/values-dev.yaml \
-  --set image.repository=ghcr.io/thev1ndu/transfergw \
+  --set image.repository=thev1ndu/transfergw \
   --set image.tag=latest
 ```
 

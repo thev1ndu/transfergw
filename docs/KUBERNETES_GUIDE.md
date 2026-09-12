@@ -239,7 +239,7 @@ kubectl get gatewayclass
 
 ### Make the image pullable
 
-The chart defaults to `ghcr.io/thev1ndu/transfergw:latest`, built and pushed by the
+The chart defaults to `thev1ndu/transfergw:latest`, built and pushed by the
 `Build and Push Image` workflow. **GHCR packages are private by default.** Either make
 the package public in the repository's package settings, or create a pull secret:
 

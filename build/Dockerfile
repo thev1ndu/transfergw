@@ -16,8 +16,7 @@ RUN go mod download
 # Copy source code
 COPY cmd/ cmd/
 COPY api/ api/
-COPY controllers/ controllers/
-COPY conversion/ conversion/
+COPY internal/ internal/
 
 # Build manager binary
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \

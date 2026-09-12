@@ -2,7 +2,7 @@ namespace: transfergw
 createNamespace: true
 
 image:
-  repository: ghcr.io/thev1ndu/transfergw
+  repository: thev1ndu/transfergw
   tag: latest
   pullPolicy: IfNotPresent
 

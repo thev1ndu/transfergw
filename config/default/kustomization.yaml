@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: transfergw
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: transfergw
+      app.kubernetes.io/version: v1beta1
+    includeSelectors: false
+
+commonAnnotations:
+  description: "Gateway Migration Operator for Kubernetes"
+
+resources:
+  - ../crd
+  - ../rbac
+  - ../manager

@@ -33,11 +33,11 @@ test: fmt vet ## Run tests.
 
 .PHONY: test-integration
 test-integration: test ## Run integration tests.
-	go test ./controllers -v -tags=integration
+	go test ./internal/controller -v -tags=integration
 
 .PHONY: test-e2e
 test-e2e: ## Run end-to-end tests (requires cluster).
-	go test ./tests/e2e -v -count=1
+	go test ./test/e2e -v -count=1
 
 .PHONY: build
 build: fmt vet ## Build manager binary.

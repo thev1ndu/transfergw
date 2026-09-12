@@ -1,18 +1,16 @@
-/*
-Copyright 2024.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+// Copyright 2026.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package main
 
@@ -34,8 +32,8 @@ import (
 	gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 
 	gatewayexamplecomv1beta1 "github.com/thev1ndu/transfergw/api/v1beta1"
-	"github.com/thev1ndu/transfergw/controllers"
-	"github.com/thev1ndu/transfergw/conversion"
+	"github.com/thev1ndu/transfergw/internal/controller"
+	"github.com/thev1ndu/transfergw/internal/conversion"
 )
 
 var (
@@ -102,7 +100,7 @@ func main() {
 
 	conversionEngine := conversion.NewEngine()
 
-	if err = (&controllers.TransferGWReconciler{
+	if err = (&controller.TransferGWReconciler{
 		Client:           mgr.GetClient(),
 		Scheme:           mgr.GetScheme(),
 		ConversionEngine: conversionEngine,

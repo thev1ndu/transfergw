@@ -1,4 +1,4 @@
-package controllers
+package controller
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	transfergwv1beta1 "github.com/thev1ndu/transfergw/api/v1beta1"
-	"github.com/thev1ndu/transfergw/conversion"
+	"github.com/thev1ndu/transfergw/internal/conversion"
 )
 
 func testScheme(t *testing.T) *runtime.Scheme {
