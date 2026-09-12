@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package controller
+package canary
 
 import (
 	"testing"
@@ -47,54 +47,54 @@ func singlePathIngress(name, host string, annotations map[string]string) network
 	}
 }
 
-func TestPairCanariesFindsAMatchingPrimary(t *testing.T) {
+func TestPairFindsAMatchingPrimary(t *testing.T) {
 	primary := singlePathIngress("main", "demo.test", nil)
-	canary := singlePathIngress("main-canary", "demo.test", map[string]string{
+	canaryIng := singlePathIngress("main-canary", "demo.test", map[string]string{
 		nginx.Prefix + "canary":        "true",
 		nginx.Prefix + "canary-weight": "20",
 	})
 
-	canaryNames, canaryForPrimary := pairCanaries([]networkingv1.Ingress{primary, canary})
+	names, forPrimary := Pair([]networkingv1.Ingress{primary, canaryIng})
 
-	if !canaryNames["demo/main-canary"] {
-		t.Errorf("canaryNames = %v, want main-canary marked as paired", canaryNames)
+	if !names["demo/main-canary"] {
+		t.Errorf("names = %v, want main-canary marked as paired", names)
 	}
-	pairing, ok := canaryForPrimary["demo/main"]
+	pairing, ok := forPrimary["demo/main"]
 	if !ok {
 		t.Fatalf("no pairing found for the primary Ingress")
 	}
-	if pairing.weight != 20 {
-		t.Errorf("weight = %d, want 20", pairing.weight)
+	if pairing.Weight != 20 {
+		t.Errorf("weight = %d, want 20", pairing.Weight)
 	}
 }
 
-func TestPairCanariesIgnoresMismatchedHosts(t *testing.T) {
+func TestPairIgnoresMismatchedHosts(t *testing.T) {
 	primary := singlePathIngress("main", "demo.test", nil)
-	canary := singlePathIngress("main-canary", "other.test", map[string]string{
+	canaryIng := singlePathIngress("main-canary", "other.test", map[string]string{
 		nginx.Prefix + "canary":        "true",
 		nginx.Prefix + "canary-weight": "20",
 	})
 
-	canaryNames, canaryForPrimary := pairCanaries([]networkingv1.Ingress{primary, canary})
-	if len(canaryNames) != 0 || len(canaryForPrimary) != 0 {
-		t.Errorf("expected no pairing for mismatched hosts, got %v / %v", canaryNames, canaryForPrimary)
+	names, forPrimary := Pair([]networkingv1.Ingress{primary, canaryIng})
+	if len(names) != 0 || len(forPrimary) != 0 {
+		t.Errorf("expected no pairing for mismatched hosts, got %v / %v", names, forPrimary)
 	}
 }
 
-func TestPairCanariesRequiresAValidWeight(t *testing.T) {
+func TestPairRequiresAValidWeight(t *testing.T) {
 	primary := singlePathIngress("main", "demo.test", nil)
-	canary := singlePathIngress("main-canary", "demo.test", map[string]string{
+	canaryIng := singlePathIngress("main-canary", "demo.test", map[string]string{
 		nginx.Prefix + "canary": "true",
 		// no canary-weight
 	})
 
-	_, canaryForPrimary := pairCanaries([]networkingv1.Ingress{primary, canary})
-	if len(canaryForPrimary) != 0 {
-		t.Errorf("expected no pairing without a valid canary-weight, got %v", canaryForPrimary)
+	_, forPrimary := Pair([]networkingv1.Ingress{primary, canaryIng})
+	if len(forPrimary) != 0 {
+		t.Errorf("expected no pairing without a valid canary-weight, got %v", forPrimary)
 	}
 }
 
-func TestMergeCanaryBackendWeightsBothSides(t *testing.T) {
+func TestMergeBackendWeightsBothSides(t *testing.T) {
 	primaryRoute := &gatewayv1.HTTPRoute{
 		Spec: gatewayv1.HTTPRouteSpec{
 			Rules: []gatewayv1.HTTPRouteRule{{
@@ -118,7 +118,7 @@ func TestMergeCanaryBackendWeightsBothSides(t *testing.T) {
 		},
 	}
 
-	mergeCanaryBackend(primaryRoute, canaryRoute, 20)
+	MergeBackend(primaryRoute, canaryRoute, 20)
 
 	refs := primaryRoute.Spec.Rules[0].BackendRefs
 	if len(refs) != 2 {

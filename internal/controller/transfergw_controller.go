@@ -17,8 +17,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"path"
-	"sort"
 	"sync"
 	"time"
 
@@ -26,7 +24,6 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -39,6 +36,9 @@ import (
 
 	transfergwv1beta1 "github.com/thev1ndu/transfergw/api/v1beta1"
 	"github.com/thev1ndu/transfergw/internal/alert"
+	"github.com/thev1ndu/transfergw/internal/controller/canary"
+	"github.com/thev1ndu/transfergw/internal/controller/overlap"
+	"github.com/thev1ndu/transfergw/internal/controller/selector"
 	"github.com/thev1ndu/transfergw/internal/conversion"
 	"github.com/thev1ndu/transfergw/internal/health"
 	"github.com/thev1ndu/transfergw/internal/lifecycle"
@@ -208,8 +208,8 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		desired   = map[string]struct{}{}
 	)
 
-	canaryNames, canaryForPrimary := pairCanaries(ingresses)
-	issues = append(issues, checkOverlaps(ingresses, canaryNames)...)
+	canaryNames, canaryForPrimary := canary.Pair(ingresses)
+	issues = append(issues, overlap.Check(ingresses, canaryNames)...)
 	convertOpts := conversion.Options{
 		GatewayName:      gatewayName,
 		GatewayNamespace: targetNS,
@@ -249,21 +249,21 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 
 		if pairing, ok := canaryForPrimary[ing.Namespace+"/"+ing.Name]; ok {
-			canaryResult := r.ConversionEngine.ConvertIngress(pairing.ingress, convertOpts)
+			canaryResult := r.ConversionEngine.ConvertIngress(pairing.Ingress, convertOpts)
 			if canaryResult.Route != nil && !canaryResult.Failed() {
-				mergeCanaryBackend(result.Route, canaryResult.Route, pairing.weight)
+				canary.MergeBackend(result.Route, canaryResult.Route, pairing.Weight)
 				converted++ // the canary counts as converted too, folded into this route
 				// The canary's own canary/canary-weight annotations would
 				// otherwise still report "no core equivalent" - true in
 				// general, but misleading here since this is exactly the
 				// case that got handled. Any other issue on the canary
 				// Ingress (e.g. its own backend problems) still surfaces.
-				issues = append(issues, toStatusIssues(nonCanaryIssues(canaryResult.Issues))...)
+				issues = append(issues, toStatusIssues(canary.NonCanaryIssues(canaryResult.Issues))...)
 				issues = append(issues, transfergwv1beta1.ConversionIssue{
 					Ingress:  ing.Namespace + "/" + ing.Name,
 					Severity: conversion.SeverityInfo,
 					Issue: fmt.Sprintf("merged canary Ingress %s/%s as a %d%% weighted backend",
-						pairing.ingress.Namespace, pairing.ingress.Name, pairing.weight),
+						pairing.Ingress.Namespace, pairing.Ingress.Name, pairing.Weight),
 				})
 			} else {
 				issues = append(issues, toStatusIssues(canaryResult.Issues)...)
@@ -271,7 +271,7 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 					Ingress:  ing.Namespace + "/" + ing.Name,
 					Severity: conversion.SeverityWarning,
 					Issue: fmt.Sprintf("canary Ingress %s/%s could not be converted, so its weight was not applied",
-						pairing.ingress.Namespace, pairing.ingress.Name),
+						pairing.Ingress.Namespace, pairing.Ingress.Name),
 				})
 			}
 		}
@@ -403,107 +403,15 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 const maxIssues = 100
 
 // SelectIngresses returns the Ingresses matching a TransferGW's selector.
-//
-// Exported (and taking a plain client.Client rather than a Reconciler) so the
-// preview CLI (cmd/preview) can run the exact same selection logic the
-// controller uses, against a real cluster, without a manager or a persisted
-// TransferGW object.
+// A thin re-export of selector.SelectIngresses, kept here so existing
+// callers (this file, cmd/preview) don't need to import the leaf package
+// directly for what reads as core reconciler behavior.
 func SelectIngresses(
 	ctx context.Context,
 	c client.Client,
 	sel transfergwv1beta1.SelectorSpec,
 ) ([]networkingv1.Ingress, error) {
-	labelSelector := labels.Everything()
-	if sel.IngressSelector != nil {
-		s, err := metav1.LabelSelectorAsSelector(sel.IngressSelector)
-		if err != nil {
-			return nil, fmt.Errorf("invalid ingressSelector: %w", err)
-		}
-		labelSelector = s
-	}
-
-	namespaces, err := resolveNamespaces(ctx, c, sel.Namespaces)
-	if err != nil {
-		return nil, err
-	}
-
-	var out []networkingv1.Ingress
-	for _, ns := range namespaces {
-		list := &networkingv1.IngressList{}
-		if err := c.List(ctx, list,
-			client.InNamespace(ns),
-			client.MatchingLabelsSelector{Selector: labelSelector},
-		); err != nil {
-			return nil, fmt.Errorf("listing ingresses in %s: %w", ns, err)
-		}
-		for i := range list.Items {
-			if matchesIngressClass(&list.Items[i], sel.IngressClasses) {
-				out = append(out, list.Items[i])
-			}
-		}
-	}
-
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Namespace != out[j].Namespace {
-			return out[i].Namespace < out[j].Namespace
-		}
-		return out[i].Name < out[j].Name
-	})
-	return out, nil
-}
-
-// resolveNamespaces expands the namespace patterns against the cluster. An
-// empty pattern list means every namespace.
-func resolveNamespaces(ctx context.Context, c client.Client, patterns []string) ([]string, error) {
-	nsList := &corev1.NamespaceList{}
-	if err := c.List(ctx, nsList); err != nil {
-		return nil, fmt.Errorf("listing namespaces: %w", err)
-	}
-
-	var out []string
-	for _, ns := range nsList.Items {
-		if ns.Status.Phase == corev1.NamespaceTerminating {
-			continue
-		}
-		if len(patterns) == 0 || matchesAnyPattern(ns.Name, patterns) {
-			out = append(out, ns.Name)
-		}
-	}
-	sort.Strings(out)
-	return out, nil
-}
-
-// matchesAnyPattern reports whether name matches any glob pattern.
-func matchesAnyPattern(name string, patterns []string) bool {
-	for _, p := range patterns {
-		if p == name {
-			return true
-		}
-		if ok, err := path.Match(p, name); err == nil && ok {
-			return true
-		}
-	}
-	return false
-}
-
-// matchesIngressClass reports whether the Ingress belongs to one of the
-// requested classes. An empty class list matches everything.
-func matchesIngressClass(ing *networkingv1.Ingress, classes []string) bool {
-	if len(classes) == 0 {
-		return true
-	}
-	name := ""
-	if ing.Spec.IngressClassName != nil {
-		name = *ing.Spec.IngressClassName
-	} else if v, ok := ing.Annotations["kubernetes.io/ingress.class"]; ok {
-		name = v
-	}
-	for _, c := range classes {
-		if c == name {
-			return true
-		}
-	}
-	return false
+	return selector.SelectIngresses(ctx, c, sel)
 }
 
 // ensureGateway creates or updates the Gateway the generated routes attach to.

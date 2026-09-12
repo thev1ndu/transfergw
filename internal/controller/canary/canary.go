@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package controller
+// Package canary merges nginx weight-based canary Ingress pairs into one
+// HTTPRoute with two weighted backendRefs, instead of converting the canary
+// as a second, unrelated route.
+package canary
 
 import (
 	"strconv"
@@ -25,14 +28,14 @@ import (
 	"github.com/thev1ndu/transfergw/internal/conversion/annotations/nginx"
 )
 
-// canaryPairing is a canary Ingress paired with the weight nginx would give
-// it, ready to fold into its primary's HTTPRoute as a second backendRef.
-type canaryPairing struct {
-	ingress *networkingv1.Ingress
-	weight  int32
+// Pairing is a canary Ingress paired with the weight nginx would give it,
+// ready to fold into its primary's HTTPRoute as a second backendRef.
+type Pairing struct {
+	Ingress *networkingv1.Ingress
+	Weight  int32
 }
 
-// pairCanaries finds nginx weight-based canary/primary Ingress pairs among
+// Pair finds nginx weight-based canary/primary Ingress pairs among
 // ingresses: a canary (canary: "true", a valid canary-weight) and a primary
 // (no canary annotation) sharing the same namespace, host and single path.
 //
@@ -47,9 +50,9 @@ type canaryPairing struct {
 // Returns which Ingress name (namespace/name) is a successfully paired
 // canary (to exclude from independent conversion) and, per primary Ingress
 // name, the pairing to fold in after it converts normally.
-func pairCanaries(ingresses []networkingv1.Ingress) (canaryNames map[string]bool, canaryForPrimary map[string]canaryPairing) {
-	canaryNames = map[string]bool{}
-	canaryForPrimary = map[string]canaryPairing{}
+func Pair(ingresses []networkingv1.Ingress) (names map[string]bool, forPrimary map[string]Pairing) {
+	names = map[string]bool{}
+	forPrimary = map[string]Pairing{}
 
 	bySignature := map[string][]*networkingv1.Ingress{}
 	for i := range ingresses {
@@ -65,25 +68,25 @@ func pairCanaries(ingresses []networkingv1.Ingress) (canaryNames map[string]bool
 		if len(group) != 2 {
 			continue
 		}
-		var primary, canary *networkingv1.Ingress
+		var primary, canaryIng *networkingv1.Ingress
 		for _, ing := range group {
 			if isCanary(ing) {
-				canary = ing
+				canaryIng = ing
 			} else {
 				primary = ing
 			}
 		}
-		if primary == nil || canary == nil {
+		if primary == nil || canaryIng == nil {
 			continue
 		}
-		weight, ok := canaryWeight(canary)
+		weight, ok := canaryWeight(canaryIng)
 		if !ok {
 			continue
 		}
-		canaryNames[canary.Namespace+"/"+canary.Name] = true
-		canaryForPrimary[primary.Namespace+"/"+primary.Name] = canaryPairing{ingress: canary, weight: weight}
+		names[canaryIng.Namespace+"/"+canaryIng.Name] = true
+		forPrimary[primary.Namespace+"/"+primary.Name] = Pairing{Ingress: canaryIng, Weight: weight}
 	}
-	return canaryNames, canaryForPrimary
+	return names, forPrimary
 }
 
 func isCanary(ing *networkingv1.Ingress) bool {
@@ -116,10 +119,10 @@ func routeSignature(ing *networkingv1.Ingress) (string, bool) {
 	return ing.Namespace + "|" + rule.Host + "|" + rule.HTTP.Paths[0].Path, true
 }
 
-// nonCanaryIssues drops the canary/canary-weight "no core equivalent"
+// NonCanaryIssues drops the canary/canary-weight "no core equivalent"
 // warnings from a successfully-merged canary Ingress's own issues - true in
 // general, but misleading for exactly the case that was just handled.
-func nonCanaryIssues(issues []conversion.Issue) []conversion.Issue {
+func NonCanaryIssues(issues []conversion.Issue) []conversion.Issue {
 	var out []conversion.Issue
 	for _, iss := range issues {
 		if strings.Contains(iss.Message, nginx.Prefix+"canary") {
@@ -130,10 +133,10 @@ func nonCanaryIssues(issues []conversion.Issue) []conversion.Issue {
 	return out
 }
 
-// mergeCanaryBackend adds the canary's backendRef, from its own already-
-// converted route, onto every rule of the primary's route, weighting both
-// sides so traffic actually splits the way canary-weight asked for.
-func mergeCanaryBackend(primaryRoute *gatewayv1.HTTPRoute, canaryRoute *gatewayv1.HTTPRoute, weight int32) {
+// MergeBackend adds the canary's backendRef, from its own already-converted
+// route, onto every rule of the primary's route, weighting both sides so
+// traffic actually splits the way canary-weight asked for.
+func MergeBackend(primaryRoute *gatewayv1.HTTPRoute, canaryRoute *gatewayv1.HTTPRoute, weight int32) {
 	if len(canaryRoute.Spec.Rules) == 0 || len(canaryRoute.Spec.Rules[0].BackendRefs) == 0 {
 		return
 	}

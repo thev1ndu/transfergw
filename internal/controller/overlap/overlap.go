@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package controller
+// Package overlap warns when more than one selected Ingress matches the
+// exact same host+path+pathType with a different backend.
+package overlap
 
 import (
 	"fmt"
@@ -23,15 +25,15 @@ import (
 	"github.com/thev1ndu/transfergw/internal/conversion"
 )
 
-// overlapEntry names one Ingress/path that matched a given host+path+pathType
+// entry names one Ingress/path that matched a given host+path+pathType
 // signature, along with the backend it points at.
-type overlapEntry struct {
+type entry struct {
 	ingress string // namespace/name
 	backend string // service:port
 }
 
-// checkOverlaps warns when more than one selected Ingress matches the exact
-// same host+path+pathType with a different backend. nginx and Gateway API
+// Check warns when more than one selected Ingress matches the exact same
+// host+path+pathType with a different backend. nginx and Gateway API
 // resolve that kind of tie by different precedence rules (nginx: annotation
 // priority/creation order; Gateway API: match specificity, then oldest
 // resource, then name) - a migration can't guarantee the same Ingress keeps
@@ -40,10 +42,10 @@ type overlapEntry struct {
 //
 // canaryNames is excluded: a paired canary Ingress is expected to share its
 // primary's exact host+path by design (that's what makes the pairing
-// possible), and pairCanaries already resolved that relationship, so it's
+// possible), and canary.Pair already resolved that relationship, so it's
 // not a genuine ambiguity.
-func checkOverlaps(ingresses []networkingv1.Ingress, canaryNames map[string]bool) []transfergwv1beta1.ConversionIssue {
-	bySignature := map[string][]overlapEntry{}
+func Check(ingresses []networkingv1.Ingress, canaryNames map[string]bool) []transfergwv1beta1.ConversionIssue {
+	bySignature := map[string][]entry{}
 
 	for i := range ingresses {
 		ing := &ingresses[i]
@@ -61,7 +63,7 @@ func checkOverlaps(ingresses []networkingv1.Ingress, canaryNames map[string]bool
 					pathType = *path.PathType
 				}
 				sig := fmt.Sprintf("%s|%s|%s", rule.Host, pathType, path.Path)
-				bySignature[sig] = append(bySignature[sig], overlapEntry{
+				bySignature[sig] = append(bySignature[sig], entry{
 					ingress: name,
 					backend: backendSignature(path),
 				})

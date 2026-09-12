@@ -22,6 +22,7 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	transfergwv1beta1 "github.com/thev1ndu/transfergw/api/v1beta1"
+	"github.com/thev1ndu/transfergw/internal/controller/webhook"
 )
 
 func gatewayClass(name string) *gatewayv1.GatewayClass {
@@ -34,7 +35,7 @@ func gatewayClass(name string) *gatewayv1.GatewayClass {
 func TestValidatorRejectsUnknownGatewayClass(t *testing.T) {
 	migration := testMigration()
 	_, c := newReconciler(t, namespace("demo"), namespace("transfergw"), migration)
-	v := &TransferGWValidator{Client: c}
+	v := &webhook.TransferGWValidator{Client: c}
 
 	if _, err := v.ValidateCreate(context.Background(), migration); err == nil {
 		t.Error("expected an error for a gatewayClass that doesn't exist")
@@ -46,7 +47,7 @@ func TestValidatorAcceptsKnownGatewayClass(t *testing.T) {
 		m.Spec.Conversion.GatewayClass = "eg"
 	})
 	_, c := newReconciler(t, namespace("demo"), namespace("transfergw"), gatewayClass("eg"), migration)
-	v := &TransferGWValidator{Client: c}
+	v := &webhook.TransferGWValidator{Client: c}
 
 	warnings, err := v.ValidateCreate(context.Background(), migration)
 	if err != nil {
@@ -73,7 +74,7 @@ func TestValidatorRejectsDuplicateGatewayOwnership(t *testing.T) {
 	})
 
 	_, c := newReconciler(t, namespace("demo"), namespace("transfergw"), gatewayClass("eg"), existing)
-	v := &TransferGWValidator{Client: c}
+	v := &webhook.TransferGWValidator{Client: c}
 
 	if _, err := v.ValidateCreate(context.Background(), incoming); err == nil {
 		t.Error("expected an error for a Gateway already owned by another TransferGW")
@@ -94,7 +95,7 @@ func TestValidatorAllowsSameGatewayNameInDifferentNamespaces(t *testing.T) {
 	})
 
 	_, c := newReconciler(t, namespace("demo"), namespace("transfergw"), namespace("other"), gatewayClass("eg"), existing)
-	v := &TransferGWValidator{Client: c}
+	v := &webhook.TransferGWValidator{Client: c}
 
 	if _, err := v.ValidateCreate(context.Background(), incoming); err != nil {
 		t.Errorf("expected no conflict across different target namespaces, got: %v", err)
@@ -116,7 +117,7 @@ func TestValidatorSkipsOwnershipCheckWhenNotGeneratingAGateway(t *testing.T) {
 	})
 
 	_, c := newReconciler(t, namespace("demo"), namespace("transfergw"), gatewayClass("eg"), existing)
-	v := &TransferGWValidator{Client: c}
+	v := &webhook.TransferGWValidator{Client: c}
 
 	if _, err := v.ValidateCreate(context.Background(), incoming); err != nil {
 		t.Errorf("expected no conflict when attaching to an existing Gateway, got: %v", err)

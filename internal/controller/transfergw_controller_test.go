@@ -411,49 +411,6 @@ func TestReconcileFailedConversionReportsFailure(t *testing.T) {
 	}
 }
 
-func TestMatchesAnyPattern(t *testing.T) {
-	tests := []struct {
-		name     string
-		patterns []string
-		want     bool
-	}{
-		{"prod", []string{"prod"}, true},
-		{"prod-a", []string{"prod-*"}, true},
-		{"staging", []string{"prod-*"}, false},
-		{"anything", []string{"*"}, true},
-		{"prod", nil, false},
-	}
-	for _, tt := range tests {
-		if got := matchesAnyPattern(tt.name, tt.patterns); got != tt.want {
-			t.Errorf("matchesAnyPattern(%q, %v) = %v, want %v", tt.name, tt.patterns, got, tt.want)
-		}
-	}
-}
-
-func TestMatchesIngressClass(t *testing.T) {
-	withClass := &networkingv1.Ingress{
-		Spec: networkingv1.IngressSpec{IngressClassName: ptr.To("nginx")},
-	}
-	withAnnotation := &networkingv1.Ingress{
-		ObjectMeta: metav1.ObjectMeta{
-			Annotations: map[string]string{"kubernetes.io/ingress.class": "nginx"},
-		},
-	}
-
-	if !matchesIngressClass(withClass, nil) {
-		t.Error("an empty class list should match everything")
-	}
-	if !matchesIngressClass(withClass, []string{"nginx"}) {
-		t.Error("spec.ingressClassName should match")
-	}
-	if matchesIngressClass(withClass, []string{"traefik"}) {
-		t.Error("a different class should not match")
-	}
-	if !matchesIngressClass(withAnnotation, []string{"nginx"}) {
-		t.Error("the legacy ingress.class annotation should match")
-	}
-}
-
 func TestRolloutPercentage(t *testing.T) {
 	immediate := testMigration()
 	if got := rolloutPercentage(immediate, 1, 0); got != 100 {

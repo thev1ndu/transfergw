@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package controller
+// Package webhook validates a TransferGW at admission time for the mistakes
+// that would otherwise only surface after the first reconcile.
+package webhook
 
 import (
 	"context"
@@ -25,6 +27,7 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	transfergwv1beta1 "github.com/thev1ndu/transfergw/api/v1beta1"
+	"github.com/thev1ndu/transfergw/internal/controller/selector"
 )
 
 // TransferGWValidator rejects a TransferGW at admission time for the
@@ -81,7 +84,7 @@ func (v *TransferGWValidator) validate(
 	}
 
 	var warnings admission.Warnings
-	ingresses, err := SelectIngresses(ctx, v.Client, tgw.Spec.Selector)
+	ingresses, err := selector.SelectIngresses(ctx, v.Client, tgw.Spec.Selector)
 	if err != nil {
 		return nil, fmt.Errorf("evaluating spec.selector: %w", err)
 	}

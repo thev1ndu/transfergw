@@ -34,6 +34,7 @@ import (
 	gatewayexamplecomv1beta1 "github.com/thev1ndu/transfergw/api/v1beta1"
 	"github.com/thev1ndu/transfergw/internal/alert"
 	"github.com/thev1ndu/transfergw/internal/controller"
+	tgwwebhook "github.com/thev1ndu/transfergw/internal/controller/webhook"
 	"github.com/thev1ndu/transfergw/internal/conversion"
 	"github.com/thev1ndu/transfergw/internal/health"
 	"github.com/thev1ndu/transfergw/internal/lifecycle"
@@ -144,7 +145,7 @@ func main() {
 	}
 
 	if enableValidatingWebhook {
-		if err := (&controller.TransferGWValidator{Client: mgr.GetClient()}).SetupWebhookWithManager(mgr); err != nil {
+		if err := (&tgwwebhook.TransferGWValidator{Client: mgr.GetClient()}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "TransferGW")
 			os.Exit(1)
 		}
