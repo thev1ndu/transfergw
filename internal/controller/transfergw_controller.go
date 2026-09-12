@@ -209,6 +209,7 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	)
 
 	canaryNames, canaryForPrimary := pairCanaries(ingresses)
+	issues = append(issues, checkOverlaps(ingresses, canaryNames)...)
 	convertOpts := conversion.Options{
 		GatewayName:      gatewayName,
 		GatewayNamespace: targetNS,
