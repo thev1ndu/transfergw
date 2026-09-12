@@ -229,21 +229,22 @@ func (t *AppRootTranslator) Translate(key, value string) ([]gatewayv1.HTTPRouteF
 	if value == "" {
 		return nil, nil
 	}
-	return []gatewayv1.HTTPRouteFilter{{
-			Type: gatewayv1.HTTPRouteFilterRequestRedirect,
-			RequestRedirect: &gatewayv1.HTTPRequestRedirectFilter{
-				StatusCode: ptr.To(302),
-				Path: &gatewayv1.HTTPPathModifier{
-					Type:            gatewayv1.FullPathHTTPPathModifier,
-					ReplaceFullPath: ptr.To(value),
-				},
+	filters := []gatewayv1.HTTPRouteFilter{{
+		Type: gatewayv1.HTTPRouteFilterRequestRedirect,
+		RequestRedirect: &gatewayv1.HTTPRequestRedirectFilter{
+			StatusCode: ptr.To(302),
+			Path: &gatewayv1.HTTPPathModifier{
+				Type:            gatewayv1.FullPathHTTPPathModifier,
+				ReplaceFullPath: ptr.To(value),
 			},
-		}}, &Issue{
-			Severity: SeverityInfo,
-			Message: fmt.Sprintf("app-root=%s was approximated as a redirect on every path "+
-				"in this rule, not just \"/\"", value),
-			Recommendation: "Split the root path into its own HTTPRoute rule if this is too broad.",
-		}
+		},
+	}}
+	return filters, &Issue{
+		Severity: SeverityInfo,
+		Message: fmt.Sprintf("app-root=%s was approximated as a redirect on every path "+
+			"in this rule, not just \"/\"", value),
+		Recommendation: "Split the root path into its own HTTPRoute rule if this is too broad.",
+	}
 }
 
 // XForwardedPrefixTranslator maps nginx's x-forwarded-prefix onto a request
