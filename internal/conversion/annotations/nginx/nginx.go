@@ -93,9 +93,17 @@ var Translators = map[string]annotation.Translator{
 	Prefix + "backend-protocol": annotation.Unsupported(
 		"Set the backend Service port's appProtocol field instead."),
 
+	// canary/canary-weight are handled at the controller level, not here:
+	// the controller looks for a primary Ingress sharing this canary's
+	// namespace/host/single path and, if found, merges this into a second
+	// weighted HTTPBackendRef on the primary's route instead of converting
+	// it as its own HTTPRoute. This entry (and its message) only fires when
+	// that pairing fails - no matching primary, more than one candidate, a
+	// multi-host/multi-path Ingress, or a missing/invalid canary-weight.
 	Prefix + "canary": annotation.Unsupported(
-		"Gateway API expresses canaries as weighted backendRefs on one HTTPRoute, " +
-			"not a second annotated Ingress; model both backends explicitly."),
+		"No matching primary Ingress was found to pair this canary with (same namespace, " +
+			"host, and a single path, plus a valid canary-weight) - model the weighted " +
+			"backendRefs explicitly instead."),
 	Prefix + "canary-weight": annotation.Unsupported(
 		"Set the weight on the corresponding backendRef instead."),
 	Prefix + "canary-by-header": annotation.Unsupported(

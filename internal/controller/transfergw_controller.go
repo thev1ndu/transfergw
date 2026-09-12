@@ -207,20 +207,56 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		desired   = map[string]struct{}{}
 	)
 
+	canaryNames, canaryForPrimary := pairCanaries(ingresses)
+	convertOpts := conversion.Options{
+		GatewayName:      gatewayName,
+		GatewayNamespace: targetNS,
+		AnnotationPolicy: annotationPolicy(migration),
+		PortResolver:     r.resolveServicePort(ctx),
+	}
+
 	for i := range ingresses {
 		ing := &ingresses[i]
+		if canaryNames[ing.Namespace+"/"+ing.Name] {
+			// Converted as a second weighted backendRef on its primary's
+			// route below, not as an independent HTTPRoute of its own.
+			continue
+		}
 
-		result := r.ConversionEngine.ConvertIngress(ing, conversion.Options{
-			GatewayName:      gatewayName,
-			GatewayNamespace: targetNS,
-			AnnotationPolicy: annotationPolicy(migration),
-			PortResolver:     r.resolveServicePort(ctx),
-		})
+		result := r.ConversionEngine.ConvertIngress(ing, convertOpts)
 		issues = append(issues, toStatusIssues(result.Issues)...)
 
 		if result.Route == nil || result.Failed() {
 			failed++
 			continue
+		}
+
+		if pairing, ok := canaryForPrimary[ing.Namespace+"/"+ing.Name]; ok {
+			canaryResult := r.ConversionEngine.ConvertIngress(pairing.ingress, convertOpts)
+			if canaryResult.Route != nil && !canaryResult.Failed() {
+				mergeCanaryBackend(result.Route, canaryResult.Route, pairing.weight)
+				converted++ // the canary counts as converted too, folded into this route
+				// The canary's own canary/canary-weight annotations would
+				// otherwise still report "no core equivalent" - true in
+				// general, but misleading here since this is exactly the
+				// case that got handled. Any other issue on the canary
+				// Ingress (e.g. its own backend problems) still surfaces.
+				issues = append(issues, toStatusIssues(nonCanaryIssues(canaryResult.Issues))...)
+				issues = append(issues, transfergwv1beta1.ConversionIssue{
+					Ingress:  ing.Namespace + "/" + ing.Name,
+					Severity: conversion.SeverityInfo,
+					Issue: fmt.Sprintf("merged canary Ingress %s/%s as a %d%% weighted backend",
+						pairing.ingress.Namespace, pairing.ingress.Name, pairing.weight),
+				})
+			} else {
+				issues = append(issues, toStatusIssues(canaryResult.Issues)...)
+				issues = append(issues, transfergwv1beta1.ConversionIssue{
+					Ingress:  ing.Namespace + "/" + ing.Name,
+					Severity: conversion.SeverityWarning,
+					Issue: fmt.Sprintf("canary Ingress %s/%s could not be converted, so its weight was not applied",
+						pairing.ingress.Namespace, pairing.ingress.Name),
+				})
+			}
 		}
 
 		if err := r.applyRoute(ctx, migration, result.Route); err != nil {
