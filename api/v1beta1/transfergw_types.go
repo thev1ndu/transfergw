@@ -415,6 +415,5 @@ type TransferGWList struct {
 	Items           []TransferGW `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&TransferGW{}, &TransferGWList{})
-}
+// TransferGW and TransferGWList are registered with the scheme by
+// addKnownTypes in groupversion_info.go.

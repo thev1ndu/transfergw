@@ -36,9 +36,11 @@ jobs:
 
       - name: Run lint
         if: always()
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          # Pinned: the action's default resolves to a v1.x build compiled with
+          # Go 1.24, which refuses a go.mod targeting 1.26.
+          version: v2.13.2
 
   integration:
     runs-on: ubuntu-latest

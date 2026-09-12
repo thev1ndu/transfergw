@@ -1,0 +1,30 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - revive
+
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+
+  exclusions:
+    generated: lax
+    rules:
+      # Generated deepcopy functions are not ours to lint.
+      - path: zz_generated\..*\.go
+        linters:
+          - staticcheck
+          - revive
+
+formatters:
+  enable:
+    - gofmt

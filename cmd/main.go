@@ -47,8 +47,8 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(corev1.AddToScheme(scheme))
 	utilruntime.Must(networkingv1.AddToScheme(scheme))
-	utilruntime.Must(gatewayv1.AddToScheme(scheme))
-	utilruntime.Must(gatewayv1beta1.AddToScheme(scheme))
+	utilruntime.Must(gatewayv1.Install(scheme))
+	utilruntime.Must(gatewayv1beta1.Install(scheme))
 	utilruntime.Must(gatewayexamplecomv1beta1.AddToScheme(scheme))
 }
 
@@ -98,10 +98,6 @@ func main() {
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "TransferGW")
 		os.Exit(1)
-	}
-
-	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		// Webhook setup would go here
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
