@@ -14,6 +14,11 @@ runs against **an existing cluster**.
 
 Both are public; no registry login is needed.
 
+> **Working on the controller itself?** This walkthrough is for trying published
+> releases by hand. If you're changing code, `make test-e2e-local` automates the
+> equivalent flow against a local kind cluster and a locally built image — see
+> `test/e2e/`.
+
 > **What "migrate" means here.** TransferGW reads your Ingresses and generates the
 > equivalent Gateway API resources — a `Gateway` plus one `HTTPRoute` per Ingress. Both
 > paths then serve the same workload side by side, and you verify the Gateway path before

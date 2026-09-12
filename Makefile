@@ -1,4 +1,4 @@
-.PHONY: help build run preview test test-integration test-e2e deploy clean generate manifests docker-build docker-push
+.PHONY: help build run preview test test-integration test-e2e test-e2e-local gatewayapi-crds deploy clean generate manifests docker-build docker-push
 
 # Variables
 IMG ?= transfergw-controller:latest
@@ -36,8 +36,15 @@ test-integration: test ## Run integration tests.
 	go test ./internal/controller -v -tags=integration
 
 .PHONY: test-e2e
-test-e2e: ## Run end-to-end tests (requires cluster).
-	go test ./test/e2e -v -count=1
+test-e2e: ## Run end-to-end tests against the cluster in your current kube context.
+	go test ./test/e2e -v -count=1 -tags=e2e -timeout=5m
+
+.PHONY: gatewayapi-crds
+gatewayapi-crds: ## Install the Gateway API standard CRDs (required once, before test-e2e).
+	kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.6.2/standard-install.yaml
+
+.PHONY: test-e2e-local
+test-e2e-local: kind-create gatewayapi-crds kind-load deploy test-e2e ## Provision a local kind cluster, deploy, then run the e2e suite end to end.
 
 .PHONY: build
 build: fmt vet ## Build manager binary.
