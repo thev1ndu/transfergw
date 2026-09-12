@@ -25,7 +25,7 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	"github.com/thev1ndu/transfergw/internal/conversion"
-	"github.com/thev1ndu/transfergw/internal/conversion/annotations/nginx"
+	"github.com/thev1ndu/transfergw/internal/conversion/annotation/nginx"
 )
 
 // Pairing is a canary Ingress paired with the weight nginx would give it,
