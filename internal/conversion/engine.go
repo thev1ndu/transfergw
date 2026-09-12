@@ -114,6 +114,7 @@ type Engine struct {
 var vendorRegistries = []map[string]Translator{
 	nginxTranslators,
 	certManagerTranslators,
+	appgwTranslators,
 }
 
 // vendorPrefixes lists every vendor annotation prefix this engine knows
@@ -123,6 +124,7 @@ var vendorRegistries = []map[string]Translator{
 var vendorPrefixes = []string{
 	nginxAnnotationPrefix,
 	certManagerAnnotationPrefix,
+	appgwAnnotationPrefix,
 }
 
 func isKnownVendorPrefix(annotation string) bool {

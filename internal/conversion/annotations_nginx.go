@@ -29,11 +29,11 @@ const nginxAnnotationPrefix = "nginx.ingress.kubernetes.io/"
 // nginxTranslators maps every ingress-nginx annotation this engine knows
 // about to the Translator that handles it. Annotations with a portable
 // Gateway API filter get a real translation; everything else still gets an
-// entry here, using unsupportedNginxAnnotation, so the operator reports a
+// entry here, using unsupportedAnnotationTranslator, so the operator reports a
 // specific, actionable warning instead of a generic "no translator" message.
 //
 // To add support for another nginx annotation, implement Translator (or
-// reuse unsupportedNginxAnnotation) and add one entry here.
+// reuse unsupportedAnnotationTranslator) and add one entry here.
 var nginxTranslators = map[string]Translator{
 	// --- Have a portable Gateway API filter -----------------------------
 	nginxAnnotationPrefix + "rewrite-target":     &RewriteTranslator{},
@@ -47,15 +47,15 @@ var nginxTranslators = map[string]Translator{
 	// --- No portable equivalent: reported, not silently dropped ---------
 	nginxAnnotationPrefix + "auth-type": &AuthTranslator{},
 	nginxAnnotationPrefix + "auth-url":  &AuthTranslator{},
-	nginxAnnotationPrefix + "auth-secret": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "auth-secret": unsupportedAnnotationTranslator(
 		"Express authentication with your implementation's policy CRD."),
-	nginxAnnotationPrefix + "auth-realm": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "auth-realm": unsupportedAnnotationTranslator(
 		"Express authentication with your implementation's policy CRD."),
-	nginxAnnotationPrefix + "auth-signin": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "auth-signin": unsupportedAnnotationTranslator(
 		"Express authentication with your implementation's policy CRD."),
-	nginxAnnotationPrefix + "auth-response-headers": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "auth-response-headers": unsupportedAnnotationTranslator(
 		"Express authentication with your implementation's policy CRD."),
-	nginxAnnotationPrefix + "auth-snippet": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "auth-snippet": unsupportedAnnotationTranslator(
 		"Gateway API has no request-snippet escape hatch; reproduce this with an " +
 			"implementation-specific filter or policy."),
 
@@ -64,74 +64,74 @@ var nginxTranslators = map[string]Translator{
 	nginxAnnotationPrefix + "limit-burst-multiplier": &RateLimitTranslator{},
 	nginxAnnotationPrefix + "limit-connections":      &RateLimitTranslator{},
 
-	nginxAnnotationPrefix + "whitelist-source-range": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "whitelist-source-range": unsupportedAnnotationTranslator(
 		"Use your implementation's IP-allowlist policy CRD (e.g. a BackendTrafficPolicy " +
 			"or SecurityPolicy) instead."),
 
-	nginxAnnotationPrefix + "enable-cors": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "enable-cors": unsupportedAnnotationTranslator(
 		"Gateway API has a core CORS filter (HTTPRouteFilterCORS); configure it " +
 			"directly on the generated HTTPRoute instead of via annotation."),
-	nginxAnnotationPrefix + "cors-allow-origin": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "cors-allow-origin": unsupportedAnnotationTranslator(
 		"Configure the HTTPRoute's CORS filter allowOrigins field instead."),
-	nginxAnnotationPrefix + "cors-allow-methods": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "cors-allow-methods": unsupportedAnnotationTranslator(
 		"Configure the HTTPRoute's CORS filter allowMethods field instead."),
-	nginxAnnotationPrefix + "cors-allow-headers": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "cors-allow-headers": unsupportedAnnotationTranslator(
 		"Configure the HTTPRoute's CORS filter allowHeaders field instead."),
-	nginxAnnotationPrefix + "cors-allow-credentials": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "cors-allow-credentials": unsupportedAnnotationTranslator(
 		"Configure the HTTPRoute's CORS filter allowCredentials field instead."),
-	nginxAnnotationPrefix + "cors-expose-headers": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "cors-expose-headers": unsupportedAnnotationTranslator(
 		"Configure the HTTPRoute's CORS filter exposeHeaders field instead."),
-	nginxAnnotationPrefix + "cors-max-age": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "cors-max-age": unsupportedAnnotationTranslator(
 		"Configure the HTTPRoute's CORS filter maxAge field instead."),
 
-	nginxAnnotationPrefix + "proxy-body-size": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "proxy-body-size": unsupportedAnnotationTranslator(
 		"Set request body size limits with your implementation's traffic policy CRD."),
-	nginxAnnotationPrefix + "proxy-connect-timeout": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "proxy-connect-timeout": unsupportedAnnotationTranslator(
 		"Set connection timeouts with your implementation's traffic policy CRD."),
-	nginxAnnotationPrefix + "proxy-read-timeout": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "proxy-read-timeout": unsupportedAnnotationTranslator(
 		"Set backend timeouts with HTTPRouteRule.timeouts.backendRequest instead."),
-	nginxAnnotationPrefix + "proxy-send-timeout": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "proxy-send-timeout": unsupportedAnnotationTranslator(
 		"Set backend timeouts with HTTPRouteRule.timeouts.backendRequest instead."),
-	nginxAnnotationPrefix + "backend-protocol": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "backend-protocol": unsupportedAnnotationTranslator(
 		"Set the backend Service port's appProtocol field instead."),
 
-	nginxAnnotationPrefix + "canary": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "canary": unsupportedAnnotationTranslator(
 		"Gateway API expresses canaries as weighted backendRefs on one HTTPRoute, " +
 			"not a second annotated Ingress; model both backends explicitly."),
-	nginxAnnotationPrefix + "canary-weight": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "canary-weight": unsupportedAnnotationTranslator(
 		"Set the weight on the corresponding backendRef instead."),
-	nginxAnnotationPrefix + "canary-by-header": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "canary-by-header": unsupportedAnnotationTranslator(
 		"Use HTTPRoute header matches across two rules instead of a canary annotation."),
-	nginxAnnotationPrefix + "canary-by-cookie": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "canary-by-cookie": unsupportedAnnotationTranslator(
 		"Use HTTPRoute cookie/header matches across two rules instead of a canary annotation."),
 
-	nginxAnnotationPrefix + "affinity": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "affinity": unsupportedAnnotationTranslator(
 		"Use your implementation's session-affinity/load-balancing policy CRD instead."),
-	nginxAnnotationPrefix + "session-cookie-name": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "session-cookie-name": unsupportedAnnotationTranslator(
 		"Use your implementation's session-affinity policy CRD instead."),
-	nginxAnnotationPrefix + "session-cookie-hash": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "session-cookie-hash": unsupportedAnnotationTranslator(
 		"Use your implementation's session-affinity policy CRD instead."),
 
-	nginxAnnotationPrefix + "configuration-snippet": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "configuration-snippet": unsupportedAnnotationTranslator(
 		"Gateway API has no raw-config escape hatch; reproduce this with an " +
 			"implementation-specific filter or policy."),
-	nginxAnnotationPrefix + "server-snippet": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "server-snippet": unsupportedAnnotationTranslator(
 		"Gateway API has no raw-config escape hatch; reproduce this with an " +
 			"implementation-specific filter or policy."),
-	nginxAnnotationPrefix + "stream-snippet": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "stream-snippet": unsupportedAnnotationTranslator(
 		"Gateway API has no raw-config escape hatch; reproduce this with an " +
 			"implementation-specific filter or policy."),
 
-	nginxAnnotationPrefix + "custom-http-errors": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "custom-http-errors": unsupportedAnnotationTranslator(
 		"Use your implementation's custom-error-response policy CRD instead."),
-	nginxAnnotationPrefix + "default-backend": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "default-backend": unsupportedAnnotationTranslator(
 		"Add an explicit catch-all HTTPRoute rule with path prefix \"/\" instead."),
-	nginxAnnotationPrefix + "service-upstream": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "service-upstream": unsupportedAnnotationTranslator(
 		"Gateway API always routes through the Service; this annotation has no effect to port."),
-	nginxAnnotationPrefix + "upstream-vhost": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "upstream-vhost": unsupportedAnnotationTranslator(
 		"Gateway API filters cannot rewrite the Host header; use your implementation's " +
 			"traffic policy CRD instead."),
-	nginxAnnotationPrefix + "ssl-passthrough": unsupportedNginxAnnotation(
+	nginxAnnotationPrefix + "ssl-passthrough": unsupportedAnnotationTranslator(
 		"Configure TLS passthrough on the Gateway listener (protocol: TLS) instead."),
 }
 
@@ -302,9 +302,9 @@ func (t *unsupportedAnnotation) Translate(key, value string) ([]gatewayv1.HTTPRo
 	}
 }
 
-// unsupportedNginxAnnotation builds a Translator for an nginx annotation that
+// unsupportedAnnotationTranslator builds a Translator for an nginx annotation that
 // has no safe automatic translation, so it still surfaces a specific,
 // actionable warning instead of the generic "no registered translator" one.
-func unsupportedNginxAnnotation(recommendation string) Translator {
+func unsupportedAnnotationTranslator(recommendation string) Translator {
 	return &unsupportedAnnotation{recommendation: recommendation}
 }

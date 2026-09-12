@@ -81,6 +81,7 @@ controller actually does today versus what's designed but not yet built.
 **2. Annotation translation**
 - [x] 2.1 Full ingress-nginx annotation coverage (real filters where Gateway API has one, explicit guidance where it doesn't)
 - [x] 2.2 cert-manager annotation translation
+- [x] 2.3 Azure Application Gateway Ingress Controller (AGIC) annotation coverage
 
 **3. Rollout & safety**
 - [x] 3.1 Percentage-based traffic rollout (immediate, gradual, canary)
