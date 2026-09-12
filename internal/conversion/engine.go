@@ -253,7 +253,13 @@ func (e *Engine) ConvertIngress(ing *networkingv1.Ingress, opts Options) *Result
 	}
 
 	parent := gatewayv1.ParentReference{
-		Name: gatewayv1.ObjectName(opts.GatewayName),
+		// Group/Kind match the Gateway API CRD's own defaults for a
+		// ParentReference (gateway.networking.k8s.io/Gateway) - see the
+		// comment on convertBackend's Group/Kind/Weight for why this needs
+		// to be explicit rather than left for the API server to fill in.
+		Group: ptr.To(gatewayv1.Group(gatewayv1.GroupName)),
+		Kind:  ptr.To(gatewayv1.Kind("Gateway")),
+		Name:  gatewayv1.ObjectName(opts.GatewayName),
 	}
 	if opts.GatewayNamespace != "" && opts.GatewayNamespace != ing.Namespace {
 		parent.Namespace = ptr.To(gatewayv1.Namespace(opts.GatewayNamespace))

@@ -103,8 +103,19 @@ func convertBackend(
 	ref := gatewayv1.HTTPBackendRef{
 		BackendRef: gatewayv1.BackendRef{
 			BackendObjectReference: gatewayv1.BackendObjectReference{
-				Name: gatewayv1.ObjectName(svc.Name),
+				// Group/Kind/Weight are set explicitly to the same values the
+				// Gateway API CRD itself defaults them to on write (core
+				// Service, weight 1). Leaving them nil produces an object
+				// that's semantically equal to the stored one but not
+				// literally equal, which controllerutil.CreateOrUpdate
+				// compares before any server round-trip - so every reconcile
+				// would see the API server's own defaulting as a "change"
+				// and report a false, permanent route update.
+				Group: ptr.To(gatewayv1.Group("")),
+				Kind:  ptr.To(gatewayv1.Kind("Service")),
+				Name:  gatewayv1.ObjectName(svc.Name),
 			},
+			Weight: ptr.To(int32(1)),
 		},
 	}
 

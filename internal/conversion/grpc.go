@@ -117,7 +117,13 @@ func convertGRPCRoute(ing *networkingv1.Ingress, opts Options) *Result {
 		return res
 	}
 
-	parent := gatewayv1.ParentReference{Name: gatewayv1.ObjectName(opts.GatewayName)}
+	// Group/Kind match the Gateway API CRD's own ParentReference defaults -
+	// see the comment on convertBackend's Group/Kind/Weight for why.
+	parent := gatewayv1.ParentReference{
+		Group: ptr.To(gatewayv1.Group(gatewayv1.GroupName)),
+		Kind:  ptr.To(gatewayv1.Kind("Gateway")),
+		Name:  gatewayv1.ObjectName(opts.GatewayName),
+	}
 	if opts.GatewayNamespace != "" && opts.GatewayNamespace != ing.Namespace {
 		parent.Namespace = ptr.To(gatewayv1.Namespace(opts.GatewayNamespace))
 	}
