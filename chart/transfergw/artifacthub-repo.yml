@@ -1,7 +1,5 @@
-# Ownership claim for Artifact Hub (https://artifacthub.io).
-# After adding this repository in the Artifact Hub control panel, paste the
-# repositoryID it gives you below to verify ownership.
-# repositoryID: <fill in after registering on artifacthub.io>
+repositoryID: 1440aa8a-8ac5-403d-a85a-70c0288ae4b8
+
 owners:
   - name: Thevindu Wickramaarachchi
     email: thevindu.w@yahoo.com
