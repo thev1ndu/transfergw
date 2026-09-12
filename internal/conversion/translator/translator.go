@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package annotation defines the shared contract every vendor annotation
-// package (internal/conversion/annotations/...) implements, plus a couple of
+// Package translator defines the shared contract every vendor annotation
+// package (internal/conversion/annotation/...) implements, plus a couple of
 // generic building blocks reused across vendors.
 //
 // It exists as its own leaf package - rather than living in
@@ -22,7 +22,7 @@
 // translators, and a vendor package needs Translator/Issue/Severity* to
 // implement one. Defining those in internal/conversion would make that a
 // cycle: internal/conversion -> annotations/nginx -> internal/conversion.
-package annotation
+package translator
 
 import (
 	"fmt"

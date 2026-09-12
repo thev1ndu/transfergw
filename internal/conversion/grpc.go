@@ -23,8 +23,8 @@ import (
 	"k8s.io/utils/ptr"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	"github.com/thev1ndu/transfergw/internal/conversion/annotations/appgw"
-	"github.com/thev1ndu/transfergw/internal/conversion/annotations/nginx"
+	"github.com/thev1ndu/transfergw/internal/conversion/annotation/appgw"
+	"github.com/thev1ndu/transfergw/internal/conversion/annotation/nginx"
 )
 
 // grpcBackendProtocolKeys lists every vendor's backend-protocol annotation.

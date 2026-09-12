@@ -27,19 +27,19 @@ import (
 	"k8s.io/utils/ptr"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	"github.com/thev1ndu/transfergw/internal/conversion/annotation"
-	"github.com/thev1ndu/transfergw/internal/conversion/annotations/appgw"
-	"github.com/thev1ndu/transfergw/internal/conversion/annotations/certmanager"
-	"github.com/thev1ndu/transfergw/internal/conversion/annotations/nginx"
+	"github.com/thev1ndu/transfergw/internal/conversion/annotation/appgw"
+	"github.com/thev1ndu/transfergw/internal/conversion/annotation/certmanager"
+	"github.com/thev1ndu/transfergw/internal/conversion/annotation/nginx"
+	"github.com/thev1ndu/transfergw/internal/conversion/translator"
 )
 
 // Severity levels reported on a ConversionResult. Aliased from the
 // annotation package so existing callers of conversion.Severity* keep
 // working unchanged.
 const (
-	SeverityInfo    = annotation.SeverityInfo
-	SeverityWarning = annotation.SeverityWarning
-	SeverityError   = annotation.SeverityError
+	SeverityInfo    = translator.SeverityInfo
+	SeverityWarning = translator.SeverityWarning
+	SeverityError   = translator.SeverityError
 )
 
 // Options controls how a single Ingress is converted.
@@ -85,7 +85,7 @@ func (p *AnnotationPolicy) dropped(key string) bool {
 // Issue is a warning or error raised while converting an Ingress. Aliased
 // from the annotation package so existing callers of conversion.Issue keep
 // working unchanged.
-type Issue = annotation.Issue
+type Issue = translator.Issue
 
 // Result is the outcome of converting one Ingress.
 type Result struct {
@@ -115,7 +115,7 @@ func (r *Result) Failed() bool {
 // Translator converts a single Ingress annotation into HTTPRoute filters.
 // Aliased from the annotation package so existing callers of
 // conversion.Translator keep working unchanged.
-type Translator = annotation.Translator
+type Translator = translator.Translator
 
 // Engine converts Ingress resources using a set of annotation translators.
 type Engine struct {
@@ -124,7 +124,7 @@ type Engine struct {
 
 // vendorRegistries lists every vendor's annotation-to-translator map.
 //
-// To support a new vendor, add a package under internal/conversion/annotations
+// To support a new vendor, add a package under internal/conversion/annotation
 // (see nginx, certmanager, appgw for the shape) and list its Translators map
 // here. NewEngine never needs any other change.
 var vendorRegistries = []map[string]Translator{
@@ -295,9 +295,9 @@ func (e *Engine) ConvertIngress(ing *networkingv1.Ingress, opts Options) *Result
 func (e *Engine) convertAnnotations(
 	ing *networkingv1.Ingress,
 	policy *AnnotationPolicy,
-) ([]gatewayv1.HTTPRouteFilter, *annotation.RuleEffect, []Issue) {
+) ([]gatewayv1.HTTPRouteFilter, *translator.RuleEffect, []Issue) {
 	var filters []gatewayv1.HTTPRouteFilter
-	var effect *annotation.RuleEffect
+	var effect *translator.RuleEffect
 	var issues []Issue
 
 	for _, k := range sortedMapKeys(ing.Annotations) {
@@ -319,7 +319,7 @@ func (e *Engine) convertAnnotations(
 
 		var f []gatewayv1.HTTPRouteFilter
 		var issue *Issue
-		if ct, ok := t.(annotation.ContextualTranslator); ok {
+		if ct, ok := t.(translator.ContextualTranslator); ok {
 			f, issue = ct.TranslateWithContext(k, ing.Annotations[k], ing.Annotations)
 		} else {
 			f, issue = t.Translate(k, ing.Annotations[k])
@@ -330,11 +330,11 @@ func (e *Engine) convertAnnotations(
 			issues = append(issues, *issue)
 		}
 
-		var eff *annotation.RuleEffect
+		var eff *translator.RuleEffect
 		var effIssue *Issue
-		if cre, ok := t.(annotation.ContextualRuleEffector); ok {
+		if cre, ok := t.(translator.ContextualRuleEffector); ok {
 			eff, effIssue = cre.EffectWithContext(k, ing.Annotations[k], ing.Annotations)
-		} else if effector, ok := t.(annotation.RuleEffector); ok {
+		} else if effector, ok := t.(translator.RuleEffector); ok {
 			eff, effIssue = effector.Effect(k, ing.Annotations[k])
 		} else {
 			continue
@@ -352,14 +352,14 @@ func (e *Engine) convertAnnotations(
 // SessionPersistence and one Timeouts can end up on an HTTPRouteRule even
 // when more than one annotation contributes to them (e.g. nginx's
 // proxy-read-timeout and proxy-send-timeout both target backendRequest).
-func mergeRuleEffect(a, b *annotation.RuleEffect) *annotation.RuleEffect {
+func mergeRuleEffect(a, b *translator.RuleEffect) *translator.RuleEffect {
 	if a == nil {
 		return b
 	}
 	if b == nil {
 		return a
 	}
-	merged := &annotation.RuleEffect{Timeouts: mergeTimeouts(a.Timeouts, b.Timeouts)}
+	merged := &translator.RuleEffect{Timeouts: mergeTimeouts(a.Timeouts, b.Timeouts)}
 	// Sorted-key iteration order makes this deterministic: whichever
 	// annotation is later alphabetically wins a genuine collision, which is
 	// an edge case (two different vendors' affinity annotations on one

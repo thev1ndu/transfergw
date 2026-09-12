@@ -19,7 +19,7 @@ import (
 
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	"github.com/thev1ndu/transfergw/internal/conversion/annotation"
+	"github.com/thev1ndu/transfergw/internal/conversion/translator"
 )
 
 func TestSSLRedirectTranslatesToSchemeRedirect(t *testing.T) {
@@ -64,7 +64,7 @@ func TestRewriteWithCaptureGroupWarnsAndEmitsNoFilter(t *testing.T) {
 	if len(filters) != 0 {
 		t.Errorf("filters = %d, want 0 for an inexpressible rewrite", len(filters))
 	}
-	if issue == nil || issue.Severity != annotation.SeverityWarning {
+	if issue == nil || issue.Severity != translator.SeverityWarning {
 		t.Errorf("expected a warning issue, got %+v", issue)
 	}
 }
@@ -96,7 +96,7 @@ func TestPermanentRedirectInvalidURLWarns(t *testing.T) {
 	if len(filters) != 0 {
 		t.Errorf("filters = %d, want 0 for an invalid redirect URL", len(filters))
 	}
-	if issue == nil || issue.Severity != annotation.SeverityWarning {
+	if issue == nil || issue.Severity != translator.SeverityWarning {
 		t.Errorf("expected a warning issue, got %+v", issue)
 	}
 }
@@ -110,7 +110,7 @@ func TestAppRootTranslatesToRedirectAndWarns(t *testing.T) {
 	if got := *filters[0].RequestRedirect.Path.ReplaceFullPath; got != "/app" {
 		t.Errorf("path = %q, want /app", got)
 	}
-	if issue == nil || issue.Severity != annotation.SeverityInfo {
+	if issue == nil || issue.Severity != translator.SeverityInfo {
 		t.Errorf("expected an info issue explaining the approximation, got %+v", issue)
 	}
 }
@@ -150,7 +150,7 @@ func TestUnsupportedAnnotationsWarnWithSpecificGuidance(t *testing.T) {
 			t.Fatalf("%s: no translator registered", key)
 		}
 		_, issue := tr.Translate(key, "x")
-		if issue == nil || issue.Severity != annotation.SeverityWarning {
+		if issue == nil || issue.Severity != translator.SeverityWarning {
 			t.Errorf("%s: expected a warning, got %+v", key, issue)
 		}
 		if issue != nil && issue.Recommendation == "" {

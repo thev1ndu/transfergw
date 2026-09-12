@@ -22,7 +22,7 @@ import (
 
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	"github.com/thev1ndu/transfergw/internal/conversion/annotation"
+	"github.com/thev1ndu/transfergw/internal/conversion/translator"
 )
 
 // Prefix is shared by every cert-manager annotation.
@@ -30,8 +30,8 @@ const Prefix = "cert-manager.io/"
 
 // Translators maps each supported cert-manager annotation to the Translator
 // that handles it. To add support for another cert-manager annotation,
-// implement annotation.Translator and add one entry here.
-var Translators = map[string]annotation.Translator{
+// implement translator.Translator and add one entry here.
+var Translators = map[string]translator.Translator{
 	Prefix + "cluster-issuer": &CertManagerTranslator{},
 	Prefix + "issuer":         &CertManagerTranslator{},
 }
@@ -39,9 +39,9 @@ var Translators = map[string]annotation.Translator{
 // CertManagerTranslator reports that cert-manager wiring moves to the Gateway.
 type CertManagerTranslator struct{}
 
-func (t *CertManagerTranslator) Translate(key, value string) ([]gatewayv1.HTTPRouteFilter, *annotation.Issue) {
-	return nil, &annotation.Issue{
-		Severity:       annotation.SeverityInfo,
+func (t *CertManagerTranslator) Translate(key, value string) ([]gatewayv1.HTTPRouteFilter, *translator.Issue) {
+	return nil, &translator.Issue{
+		Severity:       translator.SeverityInfo,
 		Message:        fmt.Sprintf("%s=%s applies to the Gateway listener, not the HTTPRoute", key, value),
 		Recommendation: "Move this annotation onto the Gateway resource.",
 	}

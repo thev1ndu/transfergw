@@ -20,24 +20,24 @@ import (
 
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	"github.com/thev1ndu/transfergw/internal/conversion/annotation"
+	"github.com/thev1ndu/transfergw/internal/conversion/translator"
 )
 
 // CORSTranslator maps enable-cors, plus whichever cors-* siblings are also
 // set, onto a single core Gateway API CORS filter. It needs
-// annotation.ContextualTranslator: CORS is inherently several annotations
+// translator.ContextualTranslator: CORS is inherently several annotations
 // combined into one filter, which a plain Translator (one key/value at a
 // time) can't see.
 type CORSTranslator struct{}
 
-func (t *CORSTranslator) Translate(key, value string) ([]gatewayv1.HTTPRouteFilter, *annotation.Issue) {
+func (t *CORSTranslator) Translate(key, value string) ([]gatewayv1.HTTPRouteFilter, *translator.Issue) {
 	return nil, nil
 }
 
 func (t *CORSTranslator) TranslateWithContext(
 	key, value string,
 	all map[string]string,
-) ([]gatewayv1.HTTPRouteFilter, *annotation.Issue) {
+) ([]gatewayv1.HTTPRouteFilter, *translator.Issue) {
 	if value != "true" {
 		return nil, nil
 	}
