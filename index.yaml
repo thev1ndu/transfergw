@@ -9,9 +9,9 @@ entries:
           url: https://github.com/thev1ndu/transfergw/tree/main/docs
     apiVersion: v2
     appVersion: 1beta1
-    created: "2026-09-12T14:00:40.412906862Z"
+    created: "2026-09-12T14:03:20.602272163Z"
     description: Kubernetes operator for migrating Ingress to Gateway APIs
-    digest: 3f57aef470ff1437efc6a224070027fed9eb00450010a441d482d209dc9e49e4
+    digest: 5bc50a516813e707a1b0047098ecc054e5f21924459fb830a30ea8410c4977a7
     home: https://github.com/thev1ndu/transfergw
     keywords:
     - kubernetes
@@ -28,4 +28,4 @@ entries:
     urls:
     - https://thev1ndu.github.io/transfergw/transfergw-1.0.0.tgz
     version: 1.0.0
-generated: "2026-09-12T14:00:40.412003954Z"
+generated: "2026-09-12T14:03:20.600912955Z"
