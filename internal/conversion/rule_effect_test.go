@@ -87,6 +87,47 @@ func TestNginxProxyTimeoutsMergeToTheLongerBackendRequest(t *testing.T) {
 	}
 }
 
+func TestNginxCORSCombinesSiblingAnnotationsThroughTheEngine(t *testing.T) {
+	ing := ingress(func(i *networkingv1.Ingress) {
+		i.Annotations = map[string]string{
+			"nginx.ingress.kubernetes.io/enable-cors":       "true",
+			"nginx.ingress.kubernetes.io/cors-allow-origin": "https://example.com",
+			"nginx.ingress.kubernetes.io/cors-max-age":      "120",
+		}
+	})
+
+	res := NewEngine().ConvertIngress(ing, defaultOpts())
+	filters := res.Route.Spec.Rules[0].Filters
+	if len(filters) != 1 || filters[0].Type != gatewayv1.HTTPRouteFilterCORS {
+		t.Fatalf("filters = %+v, want one CORS filter", filters)
+	}
+	cors := filters[0].CORS
+	if len(cors.AllowOrigins) != 1 || cors.AllowOrigins[0] != "https://example.com" {
+		t.Errorf("allowOrigins = %+v, want [https://example.com]", cors.AllowOrigins)
+	}
+	if cors.MaxAge != 120 {
+		t.Errorf("maxAge = %d, want 120", cors.MaxAge)
+	}
+}
+
+func TestNginxSessionCookieNameThroughTheEngine(t *testing.T) {
+	ing := ingress(func(i *networkingv1.Ingress) {
+		i.Annotations = map[string]string{
+			"nginx.ingress.kubernetes.io/affinity":            "cookie",
+			"nginx.ingress.kubernetes.io/session-cookie-name": "my_session",
+		}
+	})
+
+	res := NewEngine().ConvertIngress(ing, defaultOpts())
+	rule := res.Route.Spec.Rules[0]
+	if rule.SessionPersistence == nil {
+		t.Fatal("sessionPersistence is nil, want it set")
+	}
+	if rule.SessionPersistence.SessionName == nil || *rule.SessionPersistence.SessionName != "my_session" {
+		t.Errorf("sessionName = %v, want my_session", rule.SessionPersistence.SessionName)
+	}
+}
+
 func TestInvalidTimeoutValueWarnsWithoutSettingTimeouts(t *testing.T) {
 	ing := ingress(func(i *networkingv1.Ingress) {
 		i.Annotations = map[string]string{

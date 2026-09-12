@@ -140,7 +140,7 @@ func TestEveryRegisteredAnnotationHasATranslator(t *testing.T) {
 
 func TestUnsupportedAnnotationsWarnWithSpecificGuidance(t *testing.T) {
 	for _, key := range []string{
-		Prefix + "enable-cors",
+		Prefix + "session-cookie-hash",
 		Prefix + "canary",
 		Prefix + "whitelist-source-range",
 		Prefix + "configuration-snippet",

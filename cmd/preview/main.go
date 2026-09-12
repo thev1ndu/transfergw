@@ -142,12 +142,26 @@ func run(file string) error {
 		}
 	}
 
+	resolvePort := func(namespace, serviceName, portName string) (int32, error) {
+		svc := &corev1.Service{}
+		if err := cli.Get(ctx, client.ObjectKey{Namespace: namespace, Name: serviceName}, svc); err != nil {
+			return 0, err
+		}
+		for _, p := range svc.Spec.Ports {
+			if p.Name == portName {
+				return p.Port, nil
+			}
+		}
+		return 0, fmt.Errorf("service %s/%s has no port named %q", namespace, serviceName, portName)
+	}
+
 	engine := conversion.NewEngine()
 	for i := range ingresses {
 		result := engine.ConvertIngress(&ingresses[i], conversion.Options{
 			GatewayName:      gatewayName,
 			GatewayNamespace: targetNS,
 			AnnotationPolicy: policy,
+			PortResolver:     resolvePort,
 		})
 
 		for _, issue := range result.Issues {

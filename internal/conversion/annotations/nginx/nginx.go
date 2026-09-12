@@ -72,21 +72,17 @@ var Translators = map[string]annotation.Translator{
 		"Use your implementation's IP-allowlist policy CRD (e.g. a BackendTrafficPolicy " +
 			"or SecurityPolicy) instead."),
 
-	Prefix + "enable-cors": annotation.Unsupported(
-		"Gateway API has a core CORS filter (HTTPRouteFilterCORS); configure it " +
-			"directly on the generated HTTPRoute instead of via annotation."),
-	Prefix + "cors-allow-origin": annotation.Unsupported(
-		"Configure the HTTPRoute's CORS filter allowOrigins field instead."),
-	Prefix + "cors-allow-methods": annotation.Unsupported(
-		"Configure the HTTPRoute's CORS filter allowMethods field instead."),
-	Prefix + "cors-allow-headers": annotation.Unsupported(
-		"Configure the HTTPRoute's CORS filter allowHeaders field instead."),
-	Prefix + "cors-allow-credentials": annotation.Unsupported(
-		"Configure the HTTPRoute's CORS filter allowCredentials field instead."),
-	Prefix + "cors-expose-headers": annotation.Unsupported(
-		"Configure the HTTPRoute's CORS filter exposeHeaders field instead."),
-	Prefix + "cors-max-age": annotation.Unsupported(
-		"Configure the HTTPRoute's CORS filter maxAge field instead."),
+	// enable-cors is the switch; the cors-* siblings below are only ever
+	// read as context by its TranslateWithContext, via annotation.NoOp so
+	// they're still "known" annotations rather than falling through as
+	// unregistered ones.
+	Prefix + "enable-cors":            &CORSTranslator{},
+	Prefix + "cors-allow-origin":      annotation.NoOp(),
+	Prefix + "cors-allow-methods":     annotation.NoOp(),
+	Prefix + "cors-allow-headers":     annotation.NoOp(),
+	Prefix + "cors-allow-credentials": annotation.NoOp(),
+	Prefix + "cors-expose-headers":    annotation.NoOp(),
+	Prefix + "cors-max-age":           annotation.NoOp(),
 
 	Prefix + "proxy-body-size": annotation.Unsupported(
 		"Set request body size limits with your implementation's traffic policy CRD."),
@@ -107,17 +103,12 @@ var Translators = map[string]annotation.Translator{
 	Prefix + "canary-by-cookie": annotation.Unsupported(
 		"Use HTTPRoute cookie/header matches across two rules instead of a canary annotation."),
 
-	Prefix + "affinity": &annotation.CookieSessionPersistenceTranslator{},
+	Prefix + "affinity":            &annotation.CookieSessionPersistenceTranslator{},
+	Prefix + "session-cookie-name": &SessionCookieNameTranslator{},
 
-	// session-cookie-name needs the sibling affinity annotation's value to
-	// combine correctly (a custom cookie name only means something once
-	// cookie affinity is enabled) - out of reach for a single-annotation
-	// Translator, so this stays unsupported.
-	Prefix + "session-cookie-name": annotation.Unsupported(
-		"Use your implementation's session-affinity policy CRD instead, or set a fixed " +
-			"sessionName directly on the HTTPRoute's sessionPersistence field."),
 	Prefix + "session-cookie-hash": annotation.Unsupported(
-		"Use your implementation's session-affinity policy CRD instead."),
+		"Gateway API's sessionPersistence has no cookie-hashing knob; the cookie value " +
+			"is opaque to the client either way, so this annotation has no effect to port."),
 
 	Prefix + "configuration-snippet": annotation.Unsupported(
 		"Gateway API has no raw-config escape hatch; reproduce this with an " +
@@ -276,4 +267,31 @@ func (t *AuthTranslator) Translate(key, value string) ([]gatewayv1.HTTPRouteFilt
 		Message:        fmt.Sprintf("%s=%s has no core Gateway API equivalent", key, value),
 		Recommendation: "Express authentication with your implementation's policy CRD.",
 	}
+}
+
+// SessionCookieNameTranslator maps session-cookie-name onto
+// HTTPRouteRule.sessionPersistence.sessionName - but only once the sibling
+// affinity annotation has actually enabled cookie-based affinity. A custom
+// cookie name on its own, without affinity: cookie, has no effect in nginx
+// either. It needs annotation.ContextualRuleEffector to see that sibling.
+type SessionCookieNameTranslator struct{}
+
+func (t *SessionCookieNameTranslator) Translate(key, value string) ([]gatewayv1.HTTPRouteFilter, *annotation.Issue) {
+	return nil, nil
+}
+
+func (t *SessionCookieNameTranslator) EffectWithContext(
+	key, value string,
+	all map[string]string,
+) (*annotation.RuleEffect, *annotation.Issue) {
+	if value == "" || all[Prefix+"affinity"] != "cookie" {
+		return nil, nil
+	}
+	cookieType := gatewayv1.CookieBasedSessionPersistence
+	return &annotation.RuleEffect{
+		SessionPersistence: &gatewayv1.SessionPersistence{
+			Type:        &cookieType,
+			SessionName: ptr.To(value),
+		},
+	}, nil
 }

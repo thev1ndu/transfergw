@@ -73,6 +73,40 @@ type RuleEffector interface {
 	Effect(key, value string) (*RuleEffect, *Issue)
 }
 
+// ContextualTranslator is implemented by a Translator that needs to see every
+// annotation on the Ingress, not just its own key/value - required whenever
+// several annotations must combine into one filter. CORS is the motivating
+// case: enable-cors is the switch, but the filter it produces also needs
+// cors-allow-origin, cors-allow-methods, and the rest, which arrive as
+// separate map entries during the same conversion. When the engine finds a
+// translator implementing this, it calls TranslateWithContext instead of
+// Translate.
+type ContextualTranslator interface {
+	TranslateWithContext(key, value string, all map[string]string) ([]gatewayv1.HTTPRouteFilter, *Issue)
+}
+
+// ContextualRuleEffector is the RuleEffector analogue of ContextualTranslator,
+// for a rule-level effect that also needs sibling annotations to combine
+// correctly (nginx's session-cookie-name only means something once affinity
+// is already cookie-based).
+type ContextualRuleEffector interface {
+	EffectWithContext(key, value string, all map[string]string) (*RuleEffect, *Issue)
+}
+
+// noop is a Translator that never contributes a filter. Used for an
+// annotation that's only meaningful as context for a sibling
+// ContextualTranslator (e.g. cors-allow-origin is read by enable-cors's
+// TranslateWithContext, not translated on its own) - it still needs a map
+// entry so it doesn't fall through as an unknown annotation.
+type noop struct{}
+
+func (noop) Translate(key, value string) ([]gatewayv1.HTTPRouteFilter, *Issue) { return nil, nil }
+
+// NoOp returns a Translator that never contributes anything on its own,
+// for an annotation that only matters as context read by a sibling
+// ContextualTranslator/ContextualRuleEffector.
+func NoOp() Translator { return noop{} }
+
 // ParseSecondsDuration parses a plain integer number of seconds (as nginx and
 // AGIC both encode their timeout annotations) into a Gateway API Duration.
 func ParseSecondsDuration(key, value string) (*gatewayv1.Duration, *Issue) {

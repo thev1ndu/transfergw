@@ -54,7 +54,15 @@ type Options struct {
 
 	// AnnotationPolicy optionally narrows which annotations are translated.
 	AnnotationPolicy *AnnotationPolicy
+
+	// PortResolver looks up the numeric port for a Service backend that's
+	// referenced by name instead of number, so it can still convert. Optional:
+	// nil means a named port fails conversion, same as before this existed.
+	PortResolver PortResolver
 }
+
+// PortResolver looks up the numeric port for a named Service port.
+type PortResolver func(namespace, serviceName, portName string) (int32, error)
 
 // AnnotationPolicy mirrors the spec's annotation handling rules.
 type AnnotationPolicy struct {
@@ -181,7 +189,7 @@ func (e *Engine) ConvertIngress(ing *networkingv1.Ingress, opts Options) *Result
 			continue
 		}
 		for _, path := range rule.HTTP.Paths {
-			backend, issue := convertBackend(ing, path)
+			backend, issue := convertBackend(ing, path, opts.PortResolver)
 			if issue != nil {
 				res.Issues = append(res.Issues, *issue)
 				continue
@@ -293,21 +301,31 @@ func (e *Engine) convertAnnotations(
 			continue
 		}
 
-		f, issue := t.Translate(k, ing.Annotations[k])
+		var f []gatewayv1.HTTPRouteFilter
+		var issue *Issue
+		if ct, ok := t.(annotation.ContextualTranslator); ok {
+			f, issue = ct.TranslateWithContext(k, ing.Annotations[k], ing.Annotations)
+		} else {
+			f, issue = t.Translate(k, ing.Annotations[k])
+		}
 		filters = append(filters, f...)
 		if issue != nil {
 			issue.Ingress = key(ing)
 			issues = append(issues, *issue)
 		}
 
-		effector, ok := t.(annotation.RuleEffector)
-		if !ok {
+		var eff *annotation.RuleEffect
+		var effIssue *Issue
+		if cre, ok := t.(annotation.ContextualRuleEffector); ok {
+			eff, effIssue = cre.EffectWithContext(k, ing.Annotations[k], ing.Annotations)
+		} else if effector, ok := t.(annotation.RuleEffector); ok {
+			eff, effIssue = effector.Effect(k, ing.Annotations[k])
+		} else {
 			continue
 		}
-		eff, issue := effector.Effect(k, ing.Annotations[k])
-		if issue != nil {
-			issue.Ingress = key(ing)
-			issues = append(issues, *issue)
+		if effIssue != nil {
+			effIssue.Ingress = key(ing)
+			issues = append(issues, *effIssue)
 		}
 		effect = mergeRuleEffect(effect, eff)
 	}

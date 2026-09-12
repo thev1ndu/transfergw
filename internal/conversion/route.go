@@ -80,7 +80,16 @@ func matchOf(t gatewayv1.PathMatchType, value string) gatewayv1.HTTPRouteMatch {
 }
 
 // convertBackend maps an Ingress backend onto an HTTPRoute backendRef.
-func convertBackend(ing *networkingv1.Ingress, p networkingv1.HTTPIngressPath) (*gatewayv1.HTTPBackendRef, *Issue) {
+//
+// resolvePort is consulted only when the backend references its port by name:
+// HTTPBackendRef requires a port number, which the Ingress itself may not
+// carry. Passing nil preserves the older behaviour of failing outright on a
+// named port.
+func convertBackend(
+	ing *networkingv1.Ingress,
+	p networkingv1.HTTPIngressPath,
+	resolvePort PortResolver,
+) (*gatewayv1.HTTPBackendRef, *Issue) {
 	svc := p.Backend.Service
 	if svc == nil {
 		return nil, &Issue{
@@ -102,14 +111,31 @@ func convertBackend(ing *networkingv1.Ingress, p networkingv1.HTTPIngressPath) (
 	switch {
 	case svc.Port.Number != 0:
 		ref.Port = ptr.To(gatewayv1.PortNumber(svc.Port.Number))
+		return &ref, nil
+
 	case svc.Port.Name != "":
-		return nil, &Issue{
-			Ingress:  key(ing),
-			Severity: SeverityError,
-			Message: fmt.Sprintf("backend Service %q is referenced by port name %q; "+
-				"HTTPRoute backendRefs require a port number", svc.Name, svc.Port.Name),
-			Recommendation: "Reference the Service port by number in the Ingress.",
+		if resolvePort == nil {
+			return nil, &Issue{
+				Ingress:  key(ing),
+				Severity: SeverityError,
+				Message: fmt.Sprintf("backend Service %q is referenced by port name %q; "+
+					"HTTPRoute backendRefs require a port number", svc.Name, svc.Port.Name),
+				Recommendation: "Reference the Service port by number in the Ingress.",
+			}
 		}
+		n, err := resolvePort(ing.Namespace, svc.Name, svc.Port.Name)
+		if err != nil {
+			return nil, &Issue{
+				Ingress:  key(ing),
+				Severity: SeverityError,
+				Message: fmt.Sprintf("backend Service %q port %q could not be resolved: %v",
+					svc.Name, svc.Port.Name, err),
+				Recommendation: "Confirm the referenced Service exists and has a port with that name.",
+			}
+		}
+		ref.Port = ptr.To(gatewayv1.PortNumber(n))
+		return &ref, nil
+
 	default:
 		return nil, &Issue{
 			Ingress:        key(ing),
@@ -118,8 +144,6 @@ func convertBackend(ing *networkingv1.Ingress, p networkingv1.HTTPIngressPath) (
 			Recommendation: "Set spec.rules[].http.paths[].backend.service.port.number.",
 		}
 	}
-
-	return &ref, nil
 }
 
 func looksLikeRegex(p string) bool {

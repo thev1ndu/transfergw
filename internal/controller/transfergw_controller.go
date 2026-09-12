@@ -128,6 +128,7 @@ type TransferGWReconciler struct {
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=gateways/status;httproutes/status;grpcroutes/status;tlsroutes/status,verbs=get;patch;update
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=backendtlspolicies;authorizationpolicies,verbs=create;delete;get;list;patch;update;watch
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=create;delete;get;list;patch;update;watch
 
@@ -213,6 +214,7 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			GatewayName:      gatewayName,
 			GatewayNamespace: targetNS,
 			AnnotationPolicy: annotationPolicy(migration),
+			PortResolver:     r.resolveServicePort(ctx),
 		})
 		issues = append(issues, toStatusIssues(result.Issues)...)
 
@@ -805,6 +807,25 @@ func rollbackReason(migration *transfergwv1beta1.TransferGW) string {
 		}
 	}
 	return ""
+}
+
+// resolveServicePort looks up the numeric port for a Service backend
+// referenced by name, so an Ingress using a named port converts instead of
+// failing outright - the port name has to be resolved against something,
+// and the controller is the only place with a live client to do that.
+func (r *TransferGWReconciler) resolveServicePort(ctx context.Context) conversion.PortResolver {
+	return func(namespace, serviceName, portName string) (int32, error) {
+		svc := &corev1.Service{}
+		if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: serviceName}, svc); err != nil {
+			return 0, err
+		}
+		for _, p := range svc.Spec.Ports {
+			if p.Name == portName {
+				return p.Port, nil
+			}
+		}
+		return 0, fmt.Errorf("service %s/%s has no port named %q", namespace, serviceName, portName)
+	}
 }
 
 func annotationPolicy(migration *transfergwv1beta1.TransferGW) *conversion.AnnotationPolicy {

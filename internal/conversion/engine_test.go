@@ -1,6 +1,7 @@
 package conversion
 
 import (
+	"fmt"
 	"testing"
 
 	networkingv1 "k8s.io/api/networking/v1"
@@ -258,6 +259,48 @@ func TestNamedBackendPortFails(t *testing.T) {
 	res := NewEngine().ConvertIngress(ing, defaultOpts())
 	if res.Route != nil {
 		t.Error("expected no route when the only backend uses a named port")
+	}
+	if !res.Failed() {
+		t.Errorf("expected an error severity issue, got %+v", res.Issues)
+	}
+}
+
+func TestNamedBackendPortResolvesWhenAResolverIsConfigured(t *testing.T) {
+	ing := ingress(func(i *networkingv1.Ingress) {
+		i.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port = networkingv1.ServiceBackendPort{Name: "http"}
+	})
+
+	opts := defaultOpts()
+	opts.PortResolver = func(namespace, serviceName, portName string) (int32, error) {
+		if namespace == ing.Namespace && serviceName == "sample-nginx" && portName == "http" {
+			return 8080, nil
+		}
+		return 0, fmt.Errorf("unexpected lookup: %s/%s port %q", namespace, serviceName, portName)
+	}
+
+	res := NewEngine().ConvertIngress(ing, opts)
+	if res.Route == nil {
+		t.Fatalf("expected a route, issues: %+v", res.Issues)
+	}
+	backend := res.Route.Spec.Rules[0].BackendRefs[0]
+	if backend.Port == nil || *backend.Port != 8080 {
+		t.Errorf("port = %v, want 8080 (resolved from the named port)", backend.Port)
+	}
+}
+
+func TestNamedBackendPortResolverErrorFailsConversion(t *testing.T) {
+	ing := ingress(func(i *networkingv1.Ingress) {
+		i.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port = networkingv1.ServiceBackendPort{Name: "http"}
+	})
+
+	opts := defaultOpts()
+	opts.PortResolver = func(namespace, serviceName, portName string) (int32, error) {
+		return 0, fmt.Errorf("service %s/%s not found", namespace, serviceName)
+	}
+
+	res := NewEngine().ConvertIngress(ing, opts)
+	if res.Route != nil {
+		t.Error("expected no route when the resolver errors")
 	}
 	if !res.Failed() {
 		t.Errorf("expected an error severity issue, got %+v", res.Issues)
