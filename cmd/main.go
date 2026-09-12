@@ -80,6 +80,7 @@ func main() {
 	var webhookPort int
 	var prometheusURL string
 	var defaultWebhookURL string
+	var enableValidatingWebhook bool
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&prometheusURL, "prometheus-url", os.Getenv("TRANSFERGW_PROMETHEUS_URL"),
@@ -94,6 +95,11 @@ func main() {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.IntVar(&webhookPort, "webhook-port", 9443, "The port the webhook server binds to.")
+	flag.BoolVar(&enableValidatingWebhook, "enable-validating-webhook", os.Getenv("ENABLE_WEBHOOKS") == "true",
+		"Register the TransferGW validating webhook (rejects an unknown gatewayClass, a "+
+			"gatewayName already owned by another TransferGW, or warns on an empty selector). "+
+			"Requires a valid TLS cert at the webhook server's cert dir - leave this off "+
+			"unless one is actually provisioned, or every TransferGW apply will fail closed.")
 
 	opts := zap.Options{
 		Development: true,
@@ -135,6 +141,13 @@ func main() {
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "TransferGW")
 		os.Exit(1)
+	}
+
+	if enableValidatingWebhook {
+		if err := (&controller.TransferGWValidator{Client: mgr.GetClient()}).SetupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "TransferGW")
+			os.Exit(1)
+		}
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

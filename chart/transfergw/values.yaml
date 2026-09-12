@@ -17,7 +17,17 @@ resources:
     memory: 512Mi
 
 logLevel: info
+
+# enableWebhooks turns on the TransferGW validating webhook (rejects an
+# unknown gatewayClass, a gatewayName already owned by another TransferGW,
+# or warns on an empty selector). It only actually takes effect once
+# webhookCABundle is also set - without a real cert, the webhook server has
+# nothing to serve TLS with, and every TransferGW apply would fail closed.
+# Provide your own cert (cert-manager, or a manually issued one) and set
+# webhookCABundle to its base64 CA certificate; this chart does not
+# provision one for you.
 enableWebhooks: true
+webhookCABundle: ""
 
 # Cluster-wide default alerting webhook, notified on a health rollback for
 # any TransferGW that leaves spec.monitoring.alerting unset. A TransferGW

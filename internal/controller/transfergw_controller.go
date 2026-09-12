@@ -127,6 +127,7 @@ type TransferGWReconciler struct {
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=gateways;httproutes;grpcroutes;tlsroutes,verbs=create;delete;get;list;patch;update;watch
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=gateways/status;httproutes/status;grpcroutes/status;tlsroutes/status,verbs=get;patch;update
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=backendtlspolicies;authorizationpolicies,verbs=create;delete;get;list;patch;update;watch
+// +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=gatewayclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
