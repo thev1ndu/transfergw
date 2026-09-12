@@ -10,14 +10,12 @@ real Ingress. You will:
 5. Install TransferGW with Helm
 6. Create a TransferGW resource to drive the migration
 
-> **Read this before you start.** The reconciler in this repository is currently a
-> skeleton. `TransferGWReconciler.Reconcile` fetches the resource, logs it, and returns
-> without acting on it, and the conversion engine's `ConvertIngress` returns a canned
-> success without reading its input. Steps 1-5 work exactly as written. In step 6 the
-> resource is accepted and the operator logs that it saw it, but **no Gateway, HTTPRoute,
-> or traffic shift is produced**. Step 7 shows the resources the operator is meant to
-> generate, written by hand, so you can see the intended end state. See
-> [What actually works today](#what-actually-works-today) for the full picture.
+> **Scope note.** Steps 1-6 work end to end: applying a TransferGW makes the operator
+> discover the matching Ingresses and generate a Gateway plus one HTTPRoute per Ingress.
+> What the operator does *not* do is steer live client traffic between the Ingress and
+> the Gateway — that happens at the DNS or load-balancer layer. `status.trafficRouting`
+> records the intended split; moving real traffic is your job. See
+> [What is and is not implemented](#what-is-and-is-not-implemented).
 
 ---
 
@@ -348,64 +346,63 @@ kubectl describe transfergw demo-migration -n transfergw
 kubectl logs -n transfergw deployment/transfergw-controller -f
 ```
 
-You will see the controller log `Reconciling TransferGW` with the resource's name,
-namespace, and empty phase. That is where the implemented behaviour ends.
+Within a few seconds the operator reports what it did:
 
-### Two schema caveats
-
-**The CRD schema is narrower than the examples.** `chart/transfergw/templates/crd.yaml`
-defines only:
-
-- `selector`: `namespaces`, `ingressSelector`, `ingressClasses`
-- `conversion`: `gatewayClass`, `targetNamespace`, `generateGateway`, `validationMode`
-- `rollout`: `mode`, `paused`
-
-`examples/example-simple.yaml` also sets `conversion.tlsHandling`, `rollout.strategy`,
-`rollout.canary`, `monitoring`, and `lifecycle`. None of those are in the schema. Because
-the CRD is structural and does not set `x-kubernetes-preserve-unknown-fields`, the API
-server **silently prunes them on apply**. The resource will be accepted and those fields
-will simply not be there. Check with:
-
-```bash
-kubectl get transfergw demo-migration -n transfergw -o yaml
+```
+NAME             PHASE      PROGRESS   INGRESS   GATEWAY   AGE
+demo-migration   Canary     25         75        25        12s
 ```
 
-**`status` is never populated**, so the `Phase` and `Progress` printer columns stay empty.
-Nothing writes to the status subresource yet.
-
----
-
-## 7. What the migration should produce
-
-Since the reconciler does not generate these, here they are by hand. This is the target
-state — applying them gives you a working Gateway API path alongside the original Ingress,
-which is what a completed canary migration would converge on.
+`kubectl describe` shows the conversion statistics and any issues raised while
+translating annotations:
 
 ```bash
-cat <<'EOF' | kubectl apply -f -
-apiVersion: gateway.networking.k8s.io/v1
-kind: Gateway
-metadata:
-  name: transfergw-gateway
-  namespace: transfergw
-spec:
-  gatewayClassName: eg
-  listeners:
-    - name: http
-      protocol: HTTP
-      port: 80
-      allowedRoutes:
-        namespaces:
-          from: All
+kubectl describe transfergw demo-migration -n transfergw
+```
+
+```
+Status:
+  Phase:                  Canary
+  Completion Percentage:  25
+  Processed:
+    Total:      1
+    Converted:  1
+    Failed:     0
+  Resources:
+    Gateways:     1
+    Http Routes:  1
+  Issues:
+    Ingress:         demo/sample-nginx
+    Severity:        info
+    Issue:           annotation "nginx.ingress.kubernetes.io/rewrite-target" ...
+```
+
 ---
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: sample-nginx
-  namespace: demo
+
+## 7. Inspect what the operator generated
+
+The Gateway is created in `conversion.targetNamespace`, named `<migration>-gateway`:
+
+```bash
+kubectl get gateway -n transfergw
+kubectl get gateway demo-migration-gateway -n transfergw -o yaml
+```
+
+Each HTTPRoute is created **beside its source Ingress**, not in the target namespace, so
+the route can reference the backend Service without a cross-namespace ReferenceGrant:
+
+```bash
+kubectl get httproute -A
+kubectl get httproute sample-nginx -n demo -o yaml
+```
+
+You should see the Ingress host carried over as `spec.hostnames`, the path converted to a
+`PathPrefix` match, and a `parentRef` pointing back at the Gateway:
+
+```yaml
 spec:
   parentRefs:
-    - name: transfergw-gateway
+    - name: demo-migration-gateway
       namespace: transfergw
   hostnames:
     - demo.localtest.me
@@ -414,25 +411,35 @@ spec:
         - path:
             type: PathPrefix
             value: /
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
       backendRefs:
         - name: sample-nginx
           port: 80
-EOF
 ```
 
-Check that the Gateway is programmed and the route attached:
+The `URLRewrite` filter is the translated form of the Ingress's
+`nginx.ingress.kubernetes.io/rewrite-target: /` annotation.
+
+Generated resources carry `transfergw.t-1.dev/managed-by: demo-migration`, which is how
+the operator finds them again:
 
 ```bash
-kubectl get gateway -n transfergw
-kubectl get httproute -n demo
-kubectl describe httproute sample-nginx -n demo
+kubectl get httproute -A -l transfergw.t-1.dev/managed-by=demo-migration
 ```
 
-Send traffic through the Gateway's own address rather than the Ingress:
+### Verify the Gateway actually serves traffic
 
 ```bash
+kubectl get gateway demo-migration-gateway -n transfergw \
+  -o jsonpath='{.status.conditions[?(@.type=="Programmed")].status}{"\n"}'
+
 GW_IP=$(kubectl get svc -n envoy-gateway-system \
-  -l gateway.envoyproxy.io/owning-gateway-name=transfergw-gateway \
+  -l gateway.envoyproxy.io/owning-gateway-name=demo-migration-gateway \
   -o jsonpath='{.items[0].spec.clusterIP}')
 
 kubectl run curl-gw --rm -it --restart=Never -n demo \
@@ -440,35 +447,73 @@ kubectl run curl-gw --rm -it --restart=Never -n demo \
   curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: demo.localtest.me' "http://$GW_IP"
 ```
 
-A `200` means the Gateway path serves the same workload as the Ingress. Both now work;
-the canary logic that would shift traffic between them is the part that is not built.
+A `200` means the generated Gateway path serves the same workload as the original
+Ingress. Both are live; cutting real traffic over is a DNS or load-balancer change.
 
-Note the annotation gap: the Ingress carries
-`nginx.ingress.kubernetes.io/rewrite-target: /`, and nothing in the HTTPRoute above
-reproduces it. Translating that annotation into an `URLRewrite` filter is exactly what
-the stubbed `RewriteTranslator` is meant to do.
+### Reconciliation is continuous
+
+The controller watches Ingresses as well as TransferGWs. Edit the Ingress and the route
+follows:
+
+```bash
+kubectl patch ingress sample-nginx -n demo --type=json \
+  -p='[{"op":"add","path":"/spec/rules/0/http/paths/-","value":{
+        "path":"/api","pathType":"Prefix",
+        "backend":{"service":{"name":"sample-nginx","port":{"number":80}}}}}]'
+
+kubectl get httproute sample-nginx -n demo -o jsonpath='{.spec.rules[*].matches[*].path.value}{"\n"}'
+```
+
+Remove the `migrate=true` label and the generated route is pruned:
+
+```bash
+kubectl label ingress sample-nginx -n demo migrate-
+kubectl get httproute -n demo
+```
 
 ---
 
-## What actually works today
+## Rollout behaviour
 
-| Step | Status |
+`rollout.mode` controls `status.completionPercentage`:
+
+| Mode | Behaviour |
 |---|---|
-| Cluster, nginx, Service, Ingress | Works |
-| Helm chart renders and installs | Works |
-| CRD registers; TransferGW resources validate and persist | Works |
-| Operator starts, elects leader, serves health and metrics | Works |
-| Controller watches TransferGW and reconciles on change | Works (logs only) |
-| Ingress discovery and analysis | Not implemented |
-| Ingress to Gateway/HTTPRoute conversion | Stub — returns success without reading input |
-| Annotation translation | Stubs — all four return the input unchanged |
-| Traffic splitting and canary rollout | Not implemented |
-| Health monitoring and auto-rollback | Not implemented |
-| Status and printer columns | Never written |
+| `immediate` | Jumps to 100% as soon as every selected Ingress converts |
+| `canary` / `gradual` | Starts at `canary.initialPercentage` (default 25) and adds `canary.increment` (default 25) every `canary.stepDuration` (default 1h), measured from the resource's creation timestamp |
 
-The gap is concentrated in two files: `controllers/transfergw_controller.go` (the
-`Reconcile` body) and `conversion/conversion-engine.go` (`ConvertIngress` and the
-translators). Everything around them — CRD, RBAC, chart, deployment, build — is in place.
+If any Ingress fails to convert, the percentage is held at 0 rather than advancing over a
+partial migration, and the phase becomes `Failed`.
+
+Pause a rollout at any time — the controller returns immediately without touching
+resources:
+
+```bash
+kubectl patch transfergw demo-migration -n transfergw --type=merge \
+  -p '{"spec":{"rollout":{"paused":true}}}'
+```
+
+---
+
+## What is and is not implemented
+
+| Capability | Status |
+|---|---|
+| Ingress discovery by namespace glob, label selector and ingress class | Implemented |
+| Gateway generation with HTTP and per-TLS-secret HTTPS listeners | Implemented |
+| Ingress to HTTPRoute conversion (hosts, paths, backends) | Implemented |
+| Path type mapping, including regex approximation with a warning | Implemented |
+| `rewrite-target` translated to a `URLRewrite` filter | Implemented |
+| Rate-limit, auth and cert-manager annotations | Reported as issues; no core Gateway API equivalent |
+| Pruning routes when an Ingress stops matching | Implemented |
+| Status: phase, percentage, processed/resource counts, issues, conditions | Implemented |
+| Time-based canary percentage | Implemented |
+| Steering real client traffic between Ingress and Gateway | Not implemented — DNS/LB concern |
+| Metric-based health monitoring and auto-rollback | Not implemented |
+| Admission webhooks | Not implemented |
+
+The `monitoring` and `lifecycle` spec blocks validate and persist, but nothing reads them
+yet.
 
 ---
 
@@ -490,10 +535,25 @@ The CRD is not installed. It ships with the chart unless `crd.install=false`:
 kubectl get crd transfergws.transfergw.t-1.dev
 ```
 
-**Fields disappear after apply**
+**No HTTPRoute appears**
 
-Expected — see the schema caveat in step 6. The API server prunes anything the structural
-schema does not declare.
+Check the operator logs and the resource's status — conversion issues are recorded there
+rather than only in the log:
+
+```bash
+kubectl describe transfergw demo-migration -n transfergw
+kubectl logs -n transfergw deployment/transfergw-controller --tail=100
+```
+
+Common causes: the Ingress lacks the `migrate=true` label, its namespace does not match
+`selector.namespaces`, its class is not in `selector.ingressClasses`, or the backend
+references a Service port by name (HTTPRoute `backendRefs` require a port number).
+
+**HTTPRoute exists but the Gateway rejects it**
+
+The Gateway's `allowedRoutes` must permit the route's namespace. Generated Gateways set
+`from: All` because routes live beside their source Ingress. If you supplied your own
+Gateway with `generateGateway: false`, widen its `allowedRoutes`.
 
 **ingress-nginx controller pod `Pending`**
 

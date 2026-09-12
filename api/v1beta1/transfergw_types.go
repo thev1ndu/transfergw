@@ -390,6 +390,7 @@ type ConversionIssue struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=tgw
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Progress",type=integer,JSONPath=`.status.completionPercentage`
 // +kubebuilder:printcolumn:name="Ingress",type=integer,JSONPath=`.status.trafficRouting.ingress`

@@ -47,3 +47,4 @@ config/local/
 # Temporary files
 *.tmp
 *.temp
+bin/
