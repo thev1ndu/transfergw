@@ -1,5 +1,5 @@
 # Development environment values
-namespace: gateway-system
+namespace: transfergw
 createNamespace: true
 
 image:

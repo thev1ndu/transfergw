@@ -23,7 +23,7 @@ apiVersion: gateway.example.com/v1alpha1
 kind: TransferGW
 metadata:
   name: prod-migration
-  namespace: gateway-system
+  namespace: transfergw
 spec:
   # SELECTION: Which Ingresses to migrate
   selector:

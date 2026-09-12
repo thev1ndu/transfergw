@@ -302,7 +302,7 @@ make docker-build
 make deploy
 
 # View logs
-kubectl logs -n gateway-system deployment/transfergw-controller
+kubectl logs -n transfergw deployment/transfergw-controller
 
 # Create migration
 kubectl apply -f examples/example-simple.yaml

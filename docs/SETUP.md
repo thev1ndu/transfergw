@@ -33,8 +33,8 @@ kubectl get crd transfergws.gateway.example.com
 ### Step 2: Create Namespace
 
 ```bash
-kubectl create namespace gateway-system
-kubectl label namespace gateway-system control-plane=controller-manager
+kubectl create namespace transfergw
+kubectl label namespace transfergw control-plane=controller-manager
 ```
 
 ### Step 3: Apply RBAC
@@ -60,8 +60,8 @@ kubectl apply -f operator-deployment.yaml
 
 Verify operator is running:
 ```bash
-kubectl get deployment -n gateway-system transfergw-controller
-kubectl logs -n gateway-system deployment/transfergw-controller
+kubectl get deployment -n transfergw transfergw-controller
+kubectl logs -n transfergw deployment/transfergw-controller
 ```
 
 ### Step 6: Install Target Gateway
@@ -151,12 +151,12 @@ watch kubectl get transfergws -A
 
 Get detailed status:
 ```bash
-kubectl describe transfergw simple-prod-migration -n gateway-system
+kubectl describe transfergw simple-prod-migration -n transfergw
 ```
 
 View controller logs:
 ```bash
-kubectl logs -f -n gateway-system deployment/transfergw-controller
+kubectl logs -f -n transfergw deployment/transfergw-controller
 ```
 
 ## Configuration
@@ -185,7 +185,7 @@ Map annotations and handle TLS:
 ```yaml
 conversion:
   gatewayClass: envoy
-  targetNamespace: gateway-system
+  targetNamespace: transfergw
   generateGateway: true
   annotationPolicy:
     preserve: ["cert-manager.io/.*"]
@@ -259,7 +259,7 @@ Webhook receives POST with migration context:
 {
   "phase": "preConversion",
   "migration": "simple-prod-migration",
-  "namespace": "gateway-system",
+  "namespace": "transfergw",
   "ingressesCount": 42
 }
 ```
@@ -269,41 +269,41 @@ Webhook receives POST with migration context:
 ### Pause Migration
 
 ```bash
-kubectl patch transfergw simple-prod-migration -n gateway-system \
+kubectl patch transfergw simple-prod-migration -n transfergw \
   --type merge -p '{"spec":{"rollout":{"paused":true}}}'
 ```
 
 ### Resume Migration
 
 ```bash
-kubectl patch transfergw simple-prod-migration -n gateway-system \
+kubectl patch transfergw simple-prod-migration -n transfergw \
   --type merge -p '{"spec":{"rollout":{"paused":false}}}'
 ```
 
 ### Manually Advance Canary
 
 ```bash
-kubectl patch transfergw simple-prod-migration -n gateway-system \
+kubectl patch transfergw simple-prod-migration -n transfergw \
   --type merge -p '{"spec":{"rollout":{"strategy":"manual"}}}'
 ```
 
 Then update percentage:
 ```bash
-kubectl patch transfergw simple-prod-migration -n gateway-system \
+kubectl patch transfergw simple-prod-migration -n transfergw \
   --type merge -p '{"status":{"completionPercentage":50}}'
 ```
 
 ### Rollback to Ingress
 
 ```bash
-kubectl patch transfergw simple-prod-migration -n gateway-system \
+kubectl patch transfergw simple-prod-migration -n transfergw \
   --type merge -p '{"spec":{"rollout":{"mode":"rollback"}}}'
 ```
 
 ### View Conversion Issues
 
 ```bash
-kubectl get transfergw simple-prod-migration -n gateway-system -o jsonpath='{.status.issues}' | jq
+kubectl get transfergw simple-prod-migration -n transfergw -o jsonpath='{.status.issues}' | jq
 ```
 
 ## Gateway-Specific Configuration
@@ -317,7 +317,7 @@ apiVersion: gateway.example.com/v1beta1
 kind: TransferGW
 metadata:
   name: envoy-migration
-  namespace: gateway-system
+  namespace: transfergw
 spec:
   selector:
     namespaces: ["prod"]
@@ -355,7 +355,7 @@ apiVersion: gateway.example.com/v1beta1
 kind: TransferGW
 metadata:
   name: istio-migration
-  namespace: gateway-system
+  namespace: transfergw
 spec:
   selector:
     namespaces: ["prod", "staging"]
@@ -392,7 +392,7 @@ spec:
 
 Check logs:
 ```bash
-kubectl logs -n gateway-system deployment/transfergw-controller
+kubectl logs -n transfergw deployment/transfergw-controller
 ```
 
 Common issues:
@@ -405,8 +405,8 @@ Common issues:
 Webhook certificates are auto-generated. If errors persist:
 
 ```bash
-kubectl delete secret transfergw-webhook-certs -n gateway-system
-kubectl rollout restart deployment/transfergw-controller -n gateway-system
+kubectl delete secret transfergw-webhook-certs -n transfergw
+kubectl rollout restart deployment/transfergw-controller -n transfergw
 ```
 
 ### Ingresses Not Being Converted
@@ -423,7 +423,7 @@ Verify labels/namespaces match TransferGW selector spec.
 Ensure metrics collector is scraping both ingress and gateway:
 
 ```bash
-kubectl get service -n gateway-system transfergw-controller-metrics
+kubectl get service -n transfergw transfergw-controller-metrics
 ```
 
 ## Development
@@ -460,10 +460,10 @@ go test ./...
 kubectl delete transfergws --all-namespaces
 
 # Delete operator
-kubectl delete deployment transfergw-controller -n gateway-system
+kubectl delete deployment transfergw-controller -n transfergw
 
 # Delete RBAC
-kubectl delete sa,clusterrole,clusterrolebinding,role,rolebinding -n gateway-system -l app=transfergw
+kubectl delete sa,clusterrole,clusterrolebinding,role,rolebinding -n transfergw -l app=transfergw
 
 # Delete CRD (WARNING: deletes all migration history)
 kubectl delete crd transfergws.gateway.example.com

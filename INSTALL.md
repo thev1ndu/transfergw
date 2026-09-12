@@ -27,16 +27,16 @@ kind load docker-image transfergw-controller:latest --name <cluster-name>
 
 ```bash
 helm install transfergw chart/transfergw \
-  --namespace gateway-system \
+  --namespace transfergw \
   --create-namespace
 ```
 
 ### 3. Verify Installation
 
 ```bash
-kubectl get deployment -n gateway-system
-kubectl get crd transfergw.t-1.dev
-kubectl get pods -n gateway-system -l app=transfergw-controller
+kubectl get deployment -n transfergw
+kubectl get crd transfergws.transfergw.t-1.dev
+kubectl get pods -n transfergw -l app=transfergw-controller
 ```
 
 ## Configuration
@@ -45,7 +45,7 @@ kubectl get pods -n gateway-system -l app=transfergw-controller
 
 ```bash
 helm install transfergw chart/transfergw \
-  --namespace gateway-system \
+  --namespace transfergw \
   --set image.repository=myregistry/transfergw-controller \
   --set image.tag=v1.0.0 \
   --set image.pullPolicy=Always
@@ -55,7 +55,7 @@ helm install transfergw chart/transfergw \
 
 ```bash
 helm install transfergw chart/transfergw \
-  --namespace gateway-system \
+  --namespace transfergw \
   --set replicaCount=3 \
   --set resources.requests.cpu=200m \
   --set resources.requests.memory=256Mi \
@@ -68,7 +68,7 @@ helm install transfergw chart/transfergw \
 
 ```bash
 helm install transfergw chart/transfergw \
-  --namespace gateway-system \
+  --namespace transfergw \
   --set crd.install=false
 ```
 
@@ -76,7 +76,7 @@ helm install transfergw chart/transfergw \
 
 ```bash
 helm install transfergw chart/transfergw \
-  --namespace gateway-system \
+  --namespace transfergw \
   --set enableWebhooks=false
 ```
 
@@ -89,7 +89,7 @@ apiVersion: transfergw.t-1.dev/v1beta1
 kind: TransferGW
 metadata:
   name: my-migration
-  namespace: gateway-system
+  namespace: transfergw
 spec:
   selector:
     namespaces:
@@ -99,7 +99,7 @@ spec:
         migrate: "true"
   conversion:
     gatewayClass: nginx
-    targetNamespace: gateway-system
+    targetNamespace: transfergw
     generateGateway: true
   rollout:
     mode: canary
@@ -114,8 +114,8 @@ kubectl apply -f migration.yaml
 Monitor progress:
 
 ```bash
-kubectl get transfergw my-migration -n gateway-system -w
-kubectl describe transfergw my-migration -n gateway-system
+kubectl get transfergw my-migration -n transfergw -w
+kubectl describe transfergw my-migration -n transfergw
 ```
 
 ## Troubleshooting
@@ -123,7 +123,7 @@ kubectl describe transfergw my-migration -n gateway-system
 ### Check Logs
 
 ```bash
-kubectl logs -n gateway-system \
+kubectl logs -n transfergw \
   -l app=transfergw-controller \
   -f
 ```
@@ -133,14 +133,14 @@ kubectl logs -n gateway-system \
 ```bash
 kubectl get clusterrole transfergw-controller
 kubectl get clusterrolebinding transfergw-controller
-kubectl get role -n gateway-system transfergw-controller
-kubectl get rolebinding -n gateway-system transfergw-controller
+kubectl get role -n transfergw transfergw-controller
+kubectl get rolebinding -n transfergw transfergw-controller
 ```
 
 ### Check Service Account
 
 ```bash
-kubectl get sa -n gateway-system transfergw-controller
+kubectl get sa -n transfergw transfergw-controller
 ```
 
 ### Webhook Issues
@@ -155,7 +155,7 @@ kubectl get mutatingwebhookconfigurations
 View webhook logs:
 
 ```bash
-kubectl logs -n gateway-system deployment/transfergw-controller --tail=100 | grep webhook
+kubectl logs -n transfergw deployment/transfergw-controller --tail=100 | grep webhook
 ```
 
 ## Uninstall
@@ -165,10 +165,10 @@ kubectl logs -n gateway-system deployment/transfergw-controller --tail=100 | gre
 kubectl delete transfergw --all -A
 
 # Uninstall Helm release
-helm uninstall transfergw -n gateway-system
+helm uninstall transfergw -n transfergw
 
 # Optionally remove namespace
-kubectl delete namespace gateway-system
+kubectl delete namespace transfergw
 ```
 
 ## Advanced Configuration
@@ -191,6 +191,6 @@ Install with custom values:
 
 ```bash
 helm install transfergw chart/transfergw \
-  --namespace gateway-system \
+  --namespace transfergw \
   --values custom-values.yaml
 ```

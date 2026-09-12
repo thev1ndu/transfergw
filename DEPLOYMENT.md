@@ -31,7 +31,7 @@ helm repo update
 
 # Or use OCI registry directly
 helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
-  --namespace gateway-system \
+  --namespace transfergw \
   --create-namespace \
   --version latest
 ```
@@ -40,7 +40,7 @@ helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
 
 ```bash
 helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
-  --namespace gateway-system \
+  --namespace transfergw \
   --create-namespace \
   --set image.repository=ghcr.io/thev1ndu/transfergw \
   --set image.tag=latest \
@@ -52,7 +52,7 @@ helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
 
 ```bash
 helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
-  --namespace gateway-system \
+  --namespace transfergw \
   --create-namespace \
   -f chart/transfergw/examples/values-prod.yaml \
   --set image.repository=ghcr.io/thev1ndu/transfergw \
@@ -63,7 +63,7 @@ helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
 
 ```bash
 helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
-  --namespace gateway-system \
+  --namespace transfergw \
   --create-namespace \
   -f chart/transfergw/examples/values-dev.yaml \
   --set image.repository=ghcr.io/thev1ndu/transfergw \
@@ -74,23 +74,23 @@ helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
 
 ```bash
 # Check deployment
-kubectl get deployment -n gateway-system
+kubectl get deployment -n transfergw
 
 # Check pods
-kubectl get pods -n gateway-system -l app=transfergw-controller
+kubectl get pods -n transfergw -l app=transfergw-controller
 
 # Check CRD
-kubectl get crd transfergw.t-1.dev
+kubectl get crd transfergws.transfergw.t-1.dev
 
 # View controller logs
-kubectl logs -n gateway-system -l app=transfergw-controller -f
+kubectl logs -n transfergw -l app=transfergw-controller -f
 ```
 
 ## Access Controller Metrics
 
 ```bash
 # Forward metrics port
-kubectl port-forward -n gateway-system svc/transfergw-controller-metrics 8080:8080
+kubectl port-forward -n transfergw svc/transfergw-controller-metrics 8080:8080
 
 # View metrics
 curl http://localhost:8080/metrics
@@ -104,7 +104,7 @@ apiVersion: transfergw.t-1.dev/v1beta1
 kind: TransferGW
 metadata:
   name: production-migration
-  namespace: gateway-system
+  namespace: transfergw
 spec:
   selector:
     namespaces:
@@ -114,7 +114,7 @@ spec:
         migrate: "true"
   conversion:
     gatewayClass: nginx
-    targetNamespace: gateway-system
+    targetNamespace: transfergw
     generateGateway: true
   rollout:
     mode: canary
@@ -126,13 +126,13 @@ Monitor the migration:
 
 ```bash
 # Watch status
-kubectl get transfergw production-migration -n gateway-system -w
+kubectl get transfergw production-migration -n transfergw -w
 
 # Detailed status
-kubectl describe transfergw production-migration -n gateway-system
+kubectl describe transfergw production-migration -n transfergw
 
 # Follow logs
-kubectl logs -n gateway-system -l app=transfergw-controller -f
+kubectl logs -n transfergw -l app=transfergw-controller -f
 ```
 
 ## Troubleshooting
@@ -140,8 +140,8 @@ kubectl logs -n gateway-system -l app=transfergw-controller -f
 ### Pod not starting
 
 ```bash
-kubectl logs -n gateway-system -l app=transfergw-controller --all-containers=true
-kubectl describe pod -n gateway-system -l app=transfergw-controller
+kubectl logs -n transfergw -l app=transfergw-controller --all-containers=true
+kubectl describe pod -n transfergw -l app=transfergw-controller
 ```
 
 ### Image pull errors
@@ -154,13 +154,13 @@ kubectl create secret docker-registry ghcr-secret \
   --docker-username=<github-username> \
   --docker-password=<github-token> \
   --docker-email=<email> \
-  -n gateway-system
+  -n transfergw
 ```
 
 Then update the deployment to use this secret:
 
 ```bash
-kubectl patch sa transfergw-controller -n gateway-system -p '{"imagePullSecrets": [{"name": "ghcr-secret"}]}'
+kubectl patch sa transfergw-controller -n transfergw -p '{"imagePullSecrets": [{"name": "ghcr-secret"}]}'
 ```
 
 ### Check webhook issues
@@ -168,14 +168,14 @@ kubectl patch sa transfergw-controller -n gateway-system -p '{"imagePullSecrets"
 ```bash
 kubectl get validatingwebhookconfigurations
 kubectl get mutatingwebhookconfigurations
-kubectl logs -n gateway-system -l app=transfergw-controller | grep webhook
+kubectl logs -n transfergw -l app=transfergw-controller | grep webhook
 ```
 
 ## Uninstall
 
 ```bash
-helm uninstall transfergw -n gateway-system
-kubectl delete namespace gateway-system
+helm uninstall transfergw -n transfergw
+kubectl delete namespace transfergw
 ```
 
 ## CI/CD Pipeline Status

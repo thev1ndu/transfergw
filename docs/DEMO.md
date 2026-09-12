@@ -199,8 +199,8 @@ kubectl -n app-prod run test-pod --image=curlimages/curl -it --rm -- sh -c "curl
 ### Step 1: Create Gateway System Namespace
 
 ```bash
-kubectl create namespace gateway-system
-kubectl label namespace gateway-system control-plane=controller-manager
+kubectl create namespace transfergw
+kubectl label namespace transfergw control-plane=controller-manager
 ```
 
 ### Step 2: Install TransferGW CRD
@@ -210,7 +210,7 @@ kubectl label namespace gateway-system control-plane=controller-manager
 kubectl apply -f config/crd/crd.yaml
 
 # Verify CRD
-kubectl get crd transfergw.t-1.dev
+kubectl get crd transfergws.transfergw.t-1.dev
 ```
 
 **Output:**
@@ -225,7 +225,7 @@ transfergw.t-1.dev     2024-09-11T15:35:20Z
 kubectl apply -f config/rbac/rbac.yaml
 
 # Verify RBAC
-kubectl get sa -n gateway-system
+kubectl get sa -n transfergw
 kubectl get clusterrole | grep transfergw
 ```
 
@@ -251,7 +251,7 @@ kind load docker-image transfergw-controller:latest --name transfergw-demo
 kubectl apply -f config/manager/operator-deployment.yaml
 
 # Wait for deployment
-kubectl -n gateway-system rollout status deployment/transfergw-controller --timeout=60s
+kubectl -n transfergw rollout status deployment/transfergw-controller --timeout=60s
 ```
 
 **Output:**
@@ -268,10 +268,10 @@ Rollout complete in 25s
 
 ```bash
 # Check operator logs
-kubectl -n gateway-system logs deployment/transfergw-controller
+kubectl -n transfergw logs deployment/transfergw-controller
 
 # Check metrics endpoint
-kubectl -n gateway-system port-forward svc/transfergw-controller-metrics 8080:8080 &
+kubectl -n transfergw port-forward svc/transfergw-controller-metrics 8080:8080 &
 
 # In another terminal
 curl http://localhost:8080/metrics | grep transfergw
@@ -313,7 +313,7 @@ apiVersion: transfergw.t-1.dev/v1beta1
 kind: TransferGW
 metadata:
   name: prod-migration
-  namespace: gateway-system
+  namespace: transfergw
 spec:
   # Select ingresses with migrate=true label
   selector:
@@ -354,7 +354,7 @@ EOF
 kubectl apply -f prod-migration.yaml
 
 # Watch status
-kubectl -n gateway-system get transfergw -w
+kubectl -n transfergw get transfergw -w
 ```
 
 **Output:**
@@ -373,10 +373,10 @@ prod-migration    Complete      100        0         100       188s
 
 ```bash
 # Watch in real-time (in different terminal)
-watch -n 5 "kubectl -n gateway-system describe transfergw prod-migration"
+watch -n 5 "kubectl -n transfergw describe transfergw prod-migration"
 
 # Get detailed status
-kubectl -n gateway-system get transfergw prod-migration -o yaml
+kubectl -n transfergw get transfergw prod-migration -o yaml
 ```
 
 **Output (sample):**
@@ -468,7 +468,7 @@ kubectl -n app-prod run test-pod2 --image=curlimages/curl -it --rm -- sh -c "cur
 
 ```bash
 # Check migration metrics
-kubectl -n gateway-system port-forward svc/transfergw-controller-metrics 8080:8080 &
+kubectl -n transfergw port-forward svc/transfergw-controller-metrics 8080:8080 &
 
 # Query metrics
 curl -s http://localhost:8080/metrics | grep transfergw_
@@ -491,7 +491,7 @@ curl -s http://localhost:8080/metrics | grep transfergw_
 
 ```bash
 # Delete migration (if migration is complete)
-kubectl -n gateway-system delete transfergw prod-migration
+kubectl -n transfergw delete transfergw prod-migration
 
 # Delete app
 kubectl delete namespace app-prod
@@ -508,7 +508,7 @@ kubectl delete namespace ingress-system
 kubectl delete -f config/manager/operator-deployment.yaml
 kubectl delete -f config/rbac/rbac.yaml
 kubectl delete -f config/crd/crd.yaml
-kubectl delete namespace gateway-system
+kubectl delete namespace transfergw
 
 # Delete cluster
 kind delete cluster --name transfergw-demo
@@ -519,10 +519,10 @@ kind delete cluster --name transfergw-demo
 ```bash
 # If metrics deviate, operator auto-rolls back
 # Monitor rollback:
-kubectl -n gateway-system describe transfergw prod-migration
+kubectl -n transfergw describe transfergw prod-migration
 
 # Manual rollback (pause and reverse)
-kubectl -n gateway-system patch transfergw prod-migration \
+kubectl -n transfergw patch transfergw prod-migration \
   --type merge -p '{"spec":{"rollout":{"paused":true}}}'
 
 # Check status
@@ -544,7 +544,7 @@ apiVersion: transfergw.t-1.dev/v1beta1
 kind: TransferGW
 metadata:
   name: migration-${team}
-  namespace: gateway-system
+  namespace: transfergw
 spec:
   selector:
     namespaces: ["prod-${team}"]
@@ -567,7 +567,7 @@ EOF
 done
 
 # Monitor all migrations
-watch kubectl -n gateway-system get transfergw
+watch kubectl -n transfergw get transfergw
 ```
 
 **Output:**
@@ -600,13 +600,13 @@ migration-platform        Analyzing   0          30s
 **Migration stuck in Canary?**
 ```bash
 # Check operator logs
-kubectl -n gateway-system logs deployment/transfergw-controller -f
+kubectl -n transfergw logs deployment/transfergw-controller -f
 
 # Check metrics
-kubectl -n gateway-system get transfergw prod-migration -o jsonpath='{.status.metrics}'
+kubectl -n transfergw get transfergw prod-migration -o jsonpath='{.status.metrics}'
 
 # Pause and investigate
-kubectl -n gateway-system patch transfergw prod-migration \
+kubectl -n transfergw patch transfergw prod-migration \
   --type merge -p '{"spec":{"rollout":{"paused":true}}}'
 ```
 
@@ -629,10 +629,10 @@ curl -H 'Host: app.example.com' http://localhost:8888
 kubectl -n app-prod get ingress,svc
 
 # Check traffic split configuration
-kubectl -n gateway-system describe transfergw prod-migration
+kubectl -n transfergw describe transfergw prod-migration
 
 # Verify metrics collector is running
-kubectl -n gateway-system logs deployment/transfergw-controller | grep metrics
+kubectl -n transfergw logs deployment/transfergw-controller | grep metrics
 ```
 
 ---

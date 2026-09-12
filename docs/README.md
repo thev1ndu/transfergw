@@ -77,7 +77,7 @@ apiVersion: gateway.example.com/v1beta1
 kind: TransferGW
 metadata:
   name: prod-migration
-  namespace: gateway-system
+  namespace: transfergw
 spec:
   selector:              # Which ingresses to migrate
   conversion:            # How to convert (gateway class, annotation mapping)
@@ -173,7 +173,7 @@ kubectl apply -f example-simple.yaml
 
 # Monitor progress
 watch kubectl get transfergws -A
-kubectl describe transfergw simple-prod-migration -n gateway-system
+kubectl describe transfergw simple-prod-migration -n transfergw
 ```
 
 ## Testing
@@ -219,10 +219,10 @@ make manifests # Generate CRD YAML from Go structs
 
 Enable debug logging:
 ```bash
-kubectl patch deployment transfergw-controller -n gateway-system --type merge \
+kubectl patch deployment transfergw-controller -n transfergw --type merge \
   -p '{"spec":{"template":{"spec":{"containers":[{"name":"controller","env":[{"name":"LOG_LEVEL","value":"debug"}]}]}}}}'
 
-kubectl logs -f -n gateway-system deployment/transfergw-controller
+kubectl logs -f -n transfergw deployment/transfergw-controller
 ```
 
 ## API Reference
@@ -236,7 +236,7 @@ kubectl logs -f -n gateway-system deployment/transfergw-controller
 
 **conversion** (required)
 - `gatewayClass`: Target gateway class (envoy, istio, kong, aws-alb, gcp-cloud-armor)
-- `targetNamespace`: Where gateway resources are created (default: gateway-system)
+- `targetNamespace`: Where gateway resources are created (default: transfergw)
 - `generateGateway`: Auto-create Gateway if missing (default: true)
 - `annotationPolicy`: Preserve/translate/drop ingress annotations
 - `tlsHandling`: preserve, regenerate, or manual TLS handling
@@ -293,13 +293,13 @@ kubectl get ingress -A -L migrate
 
 **Operator not starting**
 ```bash
-kubectl logs -n gateway-system deployment/transfergw-controller
+kubectl logs -n transfergw deployment/transfergw-controller
 # Check: CRD installed, RBAC created, image available
 ```
 
 **Metrics not comparing**
 ```bash
-kubectl get service -n gateway-system transfergw-controller-metrics
+kubectl get service -n transfergw transfergw-controller-metrics
 # Verify Prometheus scraping both ingress and gateway services
 ```
 

@@ -67,7 +67,7 @@ type ConversionSpec struct {
 
 	// TargetNamespace is where Gateway resources are created
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:validation:Default="gateway-system"
+	// +kubebuilder:validation:Default="transfergw"
 	TargetNamespace string `json:"targetNamespace,omitempty"`
 
 	// GenerateGateway auto-creates Gateway resource if missing

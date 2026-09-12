@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: gateway-system
+namespace: transfergw
 
 commonLabels:
   app.kubernetes.io/name: transfergw
@@ -31,7 +31,7 @@ vars:
   - name: NAMESPACE
     objref:
       kind: Namespace
-      name: gateway-system
+      name: transfergw
       apiVersion: v1
     fieldref:
       fieldpath: metadata.name

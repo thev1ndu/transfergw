@@ -87,7 +87,7 @@ Complete RBAC setup:
   - ConfigMaps for state management
 
 - **ServiceAccount**: transfergw-controller
-  - In gateway-system namespace
+  - In transfergw namespace
   - Bound to ClusterRole and Role
 
 - **Features:**
@@ -306,7 +306,7 @@ kubectl apply -f rbac.yaml
   ↓
 kubectl apply -f operator-deployment.yaml
   ↓
-Operator running in gateway-system namespace
+Operator running in transfergw namespace
   ├─ 2 replicas (HA)
   ├─ Leader elected for reconciliation
   ├─ Webhooks validating/mutating TransferGW
@@ -314,7 +314,7 @@ Operator running in gateway-system namespace
 
 kubectl apply -f example-simple.yaml
   ↓
-TransferGW resource created in gateway-system
+TransferGW resource created in transfergw
   ↓
 Controller reconciles:
   1. Finds all ingress with label migrate=true

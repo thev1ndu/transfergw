@@ -20,14 +20,14 @@ helm repo update
 ### Install Chart
 
 ```bash
-helm install transfergw chart/transfergw -n gateway-system --create-namespace
+helm install transfergw chart/transfergw -n transfergw --create-namespace
 ```
 
 ### Custom Values
 
 ```bash
 helm install transfergw chart/transfergw \
-  --namespace gateway-system \
+  --namespace transfergw \
   --create-namespace \
   --values custom-values.yaml
 ```
@@ -38,7 +38,7 @@ helm install transfergw chart/transfergw \
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `namespace` | `gateway-system` | Kubernetes namespace |
+| `namespace` | `transfergw` | Kubernetes namespace |
 | `createNamespace` | `true` | Create namespace if not exists |
 | `image.repository` | `transfergw-controller` | Container image |
 | `image.tag` | `latest` | Image tag |
@@ -82,7 +82,7 @@ apiVersion: transfergw.t-1.dev/v1beta1
 kind: TransferGW
 metadata:
   name: ingress-migration
-  namespace: gateway-system
+  namespace: transfergw
 spec:
   selector:
     namespaces:
@@ -92,7 +92,7 @@ spec:
       - nginx
   conversion:
     gatewayClass: nginx
-    targetNamespace: gateway-system
+    targetNamespace: transfergw
     generateGateway: true
   rollout:
     mode: canary
@@ -102,7 +102,7 @@ spec:
 ## Uninstall
 
 ```bash
-helm uninstall transfergw -n gateway-system
+helm uninstall transfergw -n transfergw
 ```
 
 ## Troubleshooting
@@ -110,13 +110,13 @@ helm uninstall transfergw -n gateway-system
 ### Check Controller Logs
 
 ```bash
-kubectl logs -n gateway-system deployment/transfergw-controller -f
+kubectl logs -n transfergw deployment/transfergw-controller -f
 ```
 
 ### Check CRD Installation
 
 ```bash
-kubectl get crd transfergw.t-1.dev
+kubectl get crd transfergws.transfergw.t-1.dev
 ```
 
 ### Check RBAC Permissions

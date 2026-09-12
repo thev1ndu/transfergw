@@ -5,7 +5,7 @@ apiVersion: transfergw.t-1.dev/v1beta1
 kind: TransferGW
 metadata:
   name: enterprise-istio-migration
-  namespace: gateway-system
+  namespace: transfergw
   labels:
     team: platform
     version: v1beta1

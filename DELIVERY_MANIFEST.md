@@ -421,8 +421,8 @@ Total: 11.5 KB
 3. **Verify Installation**
    ```bash
    kubectl get crd transfergws.gateway.example.com
-   kubectl get deployment -n gateway-system
-   kubectl logs -n gateway-system deployment/transfergw-controller
+   kubectl get deployment -n transfergw
+   kubectl logs -n transfergw deployment/transfergw-controller
    ```
 
 4. **Create Migration**
@@ -434,7 +434,7 @@ Total: 11.5 KB
 5. **Monitor Progress**
    ```bash
    watch kubectl get transfergws -A
-   kubectl describe transfergw simple-prod-migration -n gateway-system
+   kubectl describe transfergw simple-prod-migration -n transfergw
    ```
 
 ---
