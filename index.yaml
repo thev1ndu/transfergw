@@ -3,9 +3,9 @@ entries:
   transfergw:
   - apiVersion: v2
     appVersion: 1beta1
-    created: "2026-09-12T04:37:30.972380458Z"
+    created: "2026-09-12T07:23:56.026922284Z"
     description: Kubernetes operator for migrating Ingress to Gateway APIs
-    digest: 5506e0ecc1228a47b2689a3b7a294b62c0a45d2580859478f1585e213be9d5a5
+    digest: 856f3d87390b8f048ae10d3e64d0fb707f75f626f6bcc86851f895fea5d8ec12
     home: https://github.com/thev1ndu/transfergw
     keywords:
     - kubernetes
@@ -13,8 +13,8 @@ entries:
     - gateway-api
     - migration
     maintainers:
-    - email: admin@example.com
-      name: Example
+    - email: thevindu.w@yahoo.com
+      name: Thevindu Wickramaarachchi
     name: transfergw
     sources:
     - https://github.com/thev1ndu/transfergw
@@ -22,4 +22,4 @@ entries:
     urls:
     - https://github.com/thev1ndu/transfergw/releases/download/helm-chart-latest/transfergw-1.0.0.tgz
     version: 1.0.0
-generated: "2026-09-12T04:37:30.971645862Z"
+generated: "2026-09-12T07:23:56.026141125Z"
