@@ -1,4 +1,4 @@
-.PHONY: help build run test test-integration test-e2e deploy clean generate manifests docker-build docker-push
+.PHONY: help build run preview test test-integration test-e2e deploy clean generate manifests docker-build docker-push
 
 # Variables
 IMG ?= transfergw-controller:latest
@@ -46,6 +46,11 @@ build: fmt vet ## Build manager binary.
 .PHONY: run
 run: fmt vet ## Run a controller from your host.
 	go run ./cmd/main.go --leader-elect=false
+
+.PHONY: preview
+preview: ## Preview the Gateway/HTTPRoute a TransferGW manifest would generate (usage: make preview FILE=path/to/transfergw.yaml).
+	@if [ -z "$(FILE)" ]; then echo "usage: make preview FILE=path/to/transfergw.yaml"; exit 1; fi
+	go run ./cmd/preview -f $(FILE)
 
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.

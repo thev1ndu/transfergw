@@ -289,6 +289,98 @@ kubectl logs -n transfergw deployment/transfergw-controller --tail=20
 
 ---
 
+## Preview a migration before applying it
+
+`kubectl apply --dry-run` on a `TransferGW` cannot show you the `Gateway`/`HTTPRoute` it
+would generate. Client-side dry-run never reaches the API server, and server-side
+dry-run validates but never persists the object — with nothing persisted there's no
+watch event, and the controller only reconciles on watch events. No dry-run of the
+`TransferGW` itself can trigger the logic that produces the generated resources.
+
+`cmd/preview` runs that exact selection-and-conversion logic locally, against your
+current kubeconfig context, and prints the resulting manifests to stdout — nothing is
+created, not even the `TransferGW`.
+
+Set up an Ingress to preview against, in its own namespace so it doesn't collide with
+the rest of this walkthrough:
+
+```bash
+kubectl create namespace demo-test
+
+cat <<'EOF' | kubectl apply -f -
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sample-nginx
+  namespace: demo-test
+  labels:
+    migrate: "true"
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: test.2take1.nl
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sample-nginx
+                port:
+                  number: 80
+EOF
+```
+
+Write the `TransferGW` you're considering, but don't apply it:
+
+```bash
+cat > /tmp/preview-migration.yaml <<'EOF'
+apiVersion: transfergw.t-1.dev/v1beta1
+kind: TransferGW
+metadata:
+  name: preview-migration
+  namespace: demo-test
+spec:
+  selector:
+    namespaces:
+      - demo-test
+    ingressSelector:
+      matchLabels:
+        migrate: "true"
+  conversion:
+    gatewayClass: eg
+    generateGateway: true
+  rollout:
+    mode: canary
+    strategy: percentage
+EOF
+```
+
+Preview it:
+
+```bash
+make preview FILE=/tmp/preview-migration.yaml
+```
+
+or without the Makefile:
+
+```bash
+go run ./cmd/preview -f /tmp/preview-migration.yaml
+```
+
+This prints the `Gateway` (with a listener derived from `sample-nginx`) and the
+`HTTPRoute` `cmd/preview` would create — including the `RequestRedirect` filter
+`ssl-redirect: "true"` translates to — plus any conversion issues on stderr. Nothing
+is written to the cluster; delete the namespace when done:
+
+```bash
+kubectl delete namespace demo-test
+```
+
+---
+
 ## 5. Run the migration
 
 ```bash

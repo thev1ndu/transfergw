@@ -138,7 +138,7 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	status := migration.Status.DeepCopy()
 	status.Phase = phaseAnalyzing
 
-	ingresses, err := r.selectIngresses(ctx, migration)
+	ingresses, err := SelectIngresses(ctx, r.Client, migration.Spec.Selector)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("selecting ingresses: %w", err)
 	}
@@ -292,13 +292,17 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 const maxIssues = 100
 
-// selectIngresses returns the Ingresses matching the migration's selector.
-func (r *TransferGWReconciler) selectIngresses(
+// SelectIngresses returns the Ingresses matching a TransferGW's selector.
+//
+// Exported (and taking a plain client.Client rather than a Reconciler) so the
+// preview CLI (cmd/preview) can run the exact same selection logic the
+// controller uses, against a real cluster, without a manager or a persisted
+// TransferGW object.
+func SelectIngresses(
 	ctx context.Context,
-	migration *transfergwv1beta1.TransferGW,
+	c client.Client,
+	sel transfergwv1beta1.SelectorSpec,
 ) ([]networkingv1.Ingress, error) {
-	sel := migration.Spec.Selector
-
 	labelSelector := labels.Everything()
 	if sel.IngressSelector != nil {
 		s, err := metav1.LabelSelectorAsSelector(sel.IngressSelector)
@@ -308,7 +312,7 @@ func (r *TransferGWReconciler) selectIngresses(
 		labelSelector = s
 	}
 
-	namespaces, err := r.resolveNamespaces(ctx, sel.Namespaces)
+	namespaces, err := resolveNamespaces(ctx, c, sel.Namespaces)
 	if err != nil {
 		return nil, err
 	}
@@ -316,7 +320,7 @@ func (r *TransferGWReconciler) selectIngresses(
 	var out []networkingv1.Ingress
 	for _, ns := range namespaces {
 		list := &networkingv1.IngressList{}
-		if err := r.List(ctx, list,
+		if err := c.List(ctx, list,
 			client.InNamespace(ns),
 			client.MatchingLabelsSelector{Selector: labelSelector},
 		); err != nil {
@@ -340,9 +344,9 @@ func (r *TransferGWReconciler) selectIngresses(
 
 // resolveNamespaces expands the namespace patterns against the cluster. An
 // empty pattern list means every namespace.
-func (r *TransferGWReconciler) resolveNamespaces(ctx context.Context, patterns []string) ([]string, error) {
+func resolveNamespaces(ctx context.Context, c client.Client, patterns []string) ([]string, error) {
 	nsList := &corev1.NamespaceList{}
-	if err := r.List(ctx, nsList); err != nil {
+	if err := c.List(ctx, nsList); err != nil {
 		return nil, fmt.Errorf("listing namespaces: %w", err)
 	}
 
@@ -410,7 +414,7 @@ func (r *TransferGWReconciler) ensureGateway(
 		gw.Labels[managedByLabel] = migration.Name
 
 		gw.Spec.GatewayClassName = gatewayv1.ObjectName(migration.Spec.Conversion.GatewayClass)
-		gw.Spec.Listeners = buildListeners(ingresses)
+		gw.Spec.Listeners = BuildListeners(ingresses)
 
 		// An ownerRef only works when the Gateway shares the migration's
 		// namespace; Kubernetes does not garbage collect across namespaces.
@@ -422,10 +426,10 @@ func (r *TransferGWReconciler) ensureGateway(
 	return err
 }
 
-// buildListeners derives the Gateway listeners from the selected Ingresses.
+// BuildListeners derives the Gateway listeners from the selected Ingresses.
 // Routes from every namespace are allowed, since generated HTTPRoutes live
 // alongside their source Ingress rather than in the Gateway's namespace.
-func buildListeners(ingresses []networkingv1.Ingress) []gatewayv1.Listener {
+func BuildListeners(ingresses []networkingv1.Ingress) []gatewayv1.Listener {
 	listeners := []gatewayv1.Listener{{
 		Name:     "http",
 		Protocol: gatewayv1.HTTPProtocolType,
