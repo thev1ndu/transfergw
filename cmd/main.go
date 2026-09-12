@@ -36,6 +36,7 @@ import (
 	"github.com/thev1ndu/transfergw/internal/controller"
 	"github.com/thev1ndu/transfergw/internal/conversion"
 	"github.com/thev1ndu/transfergw/internal/health"
+	"github.com/thev1ndu/transfergw/internal/lifecycle"
 )
 
 var (
@@ -130,6 +131,7 @@ func main() {
 		MetricsSource:     metricsSource,
 		Alerter:           alert.NewWebhookNotifier(),
 		DefaultWebhookURL: defaultWebhookURL,
+		HookCaller:        lifecycle.NewWebhookCaller(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "TransferGW")
 		os.Exit(1)

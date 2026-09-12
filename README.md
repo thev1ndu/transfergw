@@ -40,12 +40,12 @@ controller actually does today versus what's designed but not yet built.
 - [x] 3.1 Percentage-based traffic rollout (immediate, gradual, canary)
 - [x] 3.2 Health-based automatic rollback (Prometheus-backed threshold breach detection)
 - [x] 3.3 Webhook alerting on rollback (per-migration via `spec.monitoring.alerting`, or a chart-wide default)
+- [x] 3.4 Lifecycle hooks (`spec.lifecycle.hooks`: PreConversion/PreRollout gate progress on a 2xx response; PostConversion/PostRollout notify without blocking)
 
 **4. Planned**
-- [ ] 4.1 Lifecycle hooks (pre/post conversion webhooks)
-- [ ] 4.2 Multi-gateway support (Istio, Kong, cloud LBs)
-- [ ] 4.3 Multi-cluster migrations
-- [ ] 4.4 Slack alerting integration
+- [ ] 4.1 Multi-gateway support (Istio, Kong, cloud LBs)
+- [ ] 4.2 Multi-cluster migrations
+- [ ] 4.3 Slack alerting integration
 
 ## License
 

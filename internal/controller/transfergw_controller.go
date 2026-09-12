@@ -41,6 +41,7 @@ import (
 	"github.com/thev1ndu/transfergw/internal/alert"
 	"github.com/thev1ndu/transfergw/internal/conversion"
 	"github.com/thev1ndu/transfergw/internal/health"
+	"github.com/thev1ndu/transfergw/internal/lifecycle"
 )
 
 const (
@@ -72,6 +73,10 @@ const (
 	// phaseRolledBack means a health threshold was breached mid-canary and the
 	// Gateway's traffic share was taken back to rollbackPercentage.
 	phaseRolledBack = "RolledBack"
+
+	// phasePending means a blocking lifecycle hook (currently only
+	// PreConversion) has not yet approved the migration.
+	phasePending = "Pending"
 )
 
 // rollbackPercentage is where a health rollback parks the Gateway's traffic
@@ -104,7 +109,14 @@ type TransferGWReconciler struct {
 	// explicitly (including Enabled: false) always overrides this.
 	DefaultWebhookURL string
 
+	// HookCaller invokes spec.lifecycle.hooks webhooks. Optional: a migration
+	// with a hook configured but a nil HookCaller fails open (the hook is
+	// treated as approved), the same fail-open choice already made for a nil
+	// MetricsSource, logged once so a genuinely missing wiring is visible.
+	HookCaller lifecycle.Caller
+
 	warnNoMetricsSource sync.Once
+	warnNoHookCaller    sync.Once
 }
 
 // +kubebuilder:rbac:groups=transfergw.t-1.dev,resources=transfergws,verbs=create;delete;deletecollection;get;list;patch;update;watch
@@ -147,6 +159,17 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	status := migration.Status.DeepCopy()
+
+	if !r.runHook(ctx, migration, status, lifecycle.PreConversion, true) {
+		status.Phase = phasePending
+		now := metav1.Now()
+		status.LastTransitionTime = &now
+		if err := r.patchStatus(ctx, migration, status); err != nil {
+			return ctrl.Result{}, fmt.Errorf("updating status: %w", err)
+		}
+		return ctrl.Result{RequeueAfter: requeueInterval}, nil
+	}
+
 	status.Phase = phaseAnalyzing
 
 	ingresses, err := SelectIngresses(ctx, r.Client, migration.Spec.Selector)
@@ -235,7 +258,19 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 	status.Issues = issues
 
+	// Non-blocking: HTTPRoutes already exist by this point, so there is
+	// nothing left to hold back. This only records that conversion happened.
+	r.runHook(ctx, migration, status, lifecycle.PostConversion, false)
+
 	percentage := rolloutPercentage(migration, converted, failed)
+
+	// PreRollout gates the first move away from 0%, once. It is not
+	// re-checked on every subsequent step: once approved, the canary/gradual
+	// schedule in spec.rollout runs on its own, same as it always did.
+	awaitingPreRollout := percentage > 0 && !r.runHook(ctx, migration, status, lifecycle.PreRollout, true)
+	if awaitingPreRollout {
+		percentage = 0
+	}
 
 	// Health only says something useful while traffic is genuinely split: at
 	// 0% there is nothing on the Gateway path to measure, and at 100% there is
@@ -268,6 +303,10 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		setCondition(status, "Ready", metav1.ConditionFalse, "HealthRollback", msg)
 		setCondition(status, conditionRolledBack, metav1.ConditionTrue, "ThresholdBreached", msg)
 		r.sendRollbackAlert(ctx, migration, msg)
+	case awaitingPreRollout:
+		status.Phase = phasePending
+		setCondition(status, "Ready", metav1.ConditionFalse, "AwaitingPreRolloutHook",
+			"Conversion is complete; waiting for the PreRollout hook to approve moving traffic")
 	case total == 0:
 		status.Phase = phaseAnalyzing
 		setCondition(status, "Ready", metav1.ConditionFalse, "NoMatchingIngresses",
@@ -280,6 +319,7 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		status.Phase = phaseComplete
 		setCondition(status, "Ready", metav1.ConditionTrue, "MigrationComplete",
 			fmt.Sprintf("Converted %d of %d Ingress resources", converted, total))
+		r.runHook(ctx, migration, status, lifecycle.PostRollout, false)
 	default:
 		status.Phase = phaseCanary
 		setCondition(status, "Ready", metav1.ConditionFalse, "RolloutInProgress",
@@ -808,6 +848,102 @@ func setCondition(status *transfergwv1beta1.TransferGWStatus, condType string, s
 		return
 	}
 	status.Conditions = append(status.Conditions, cond)
+}
+
+func findCondition(status *transfergwv1beta1.TransferGWStatus, condType string) *metav1.Condition {
+	for i := range status.Conditions {
+		if status.Conditions[i].Type == condType {
+			return &status.Conditions[i]
+		}
+	}
+	return nil
+}
+
+// hookConditionType names the condition a hook stage's outcome is recorded
+// under, so kubectl describe shows which stage a migration is held on.
+func hookConditionType(stage lifecycle.Stage) string {
+	return "Hook" + string(stage)
+}
+
+// hookFor returns the webhook configured for stage, or nil if lifecycle hooks
+// aren't configured at all or that particular stage is unset.
+func hookFor(migration *transfergwv1beta1.TransferGW, stage lifecycle.Stage) *transfergwv1beta1.WebhookSpec {
+	h := migration.Spec.Lifecycle
+	if h == nil || h.Hooks == nil {
+		return nil
+	}
+	switch stage {
+	case lifecycle.PreConversion:
+		return h.Hooks.PreConversion
+	case lifecycle.PostConversion:
+		return h.Hooks.PostConversion
+	case lifecycle.PreRollout:
+		return h.Hooks.PreRollout
+	case lifecycle.PostRollout:
+		return h.Hooks.PostRollout
+	default:
+		return nil
+	}
+}
+
+// runHook resolves stage's hook (if any) for the current spec generation and
+// reports whether the migration may proceed past that stage.
+//
+// A hook's outcome is recorded as a condition stamped with the generation it
+// was evaluated against, so an already-approved hook is not called again on
+// every reconcile - only once per generation, i.e. only again once the spec
+// changes. blocking hooks (PreConversion, PreRollout) return the hook's
+// answer; non-blocking hooks (PostConversion, PostRollout) always return true
+// since there's nothing left at that point to hold back - they only notify.
+func (r *TransferGWReconciler) runHook(
+	ctx context.Context,
+	migration *transfergwv1beta1.TransferGW,
+	status *transfergwv1beta1.TransferGWStatus,
+	stage lifecycle.Stage,
+	blocking bool,
+) bool {
+	hook := hookFor(migration, stage)
+	if hook == nil || hook.Url == "" {
+		return true
+	}
+
+	condType := hookConditionType(stage)
+	if c := findCondition(status, condType); c != nil &&
+		c.ObservedGeneration == migration.Generation && c.Status == metav1.ConditionTrue {
+		return true
+	}
+
+	if r.HookCaller == nil {
+		r.warnNoHookCaller.Do(func() {
+			log.FromContext(ctx).Info(
+				"spec.lifecycle.hooks is configured but no HookCaller is wired; hooks are treated as approved",
+				"stage", stage)
+		})
+		return true
+	}
+
+	proceed, err := r.HookCaller.Call(ctx, hook.Url, lifecycle.Event{
+		Migration: migration.Namespace + "/" + migration.Name,
+		Stage:     string(stage),
+		Time:      time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		log.FromContext(ctx).Error(err, "calling lifecycle hook", "stage", stage)
+	}
+
+	reason, msg, condStatus := "Approved", fmt.Sprintf("%s hook approved", stage), metav1.ConditionTrue
+	if !proceed {
+		reason, msg, condStatus = "Blocked", fmt.Sprintf("%s hook has not approved yet", stage), metav1.ConditionFalse
+	}
+	setCondition(status, condType, condStatus, reason, msg)
+	if c := findCondition(status, condType); c != nil {
+		c.ObservedGeneration = migration.Generation
+	}
+
+	if !blocking {
+		return true
+	}
+	return proceed
 }
 
 // patchStatus writes the computed status back, retrying once on conflict.
