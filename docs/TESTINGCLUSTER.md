@@ -413,15 +413,30 @@ Status:
 
 ## 7. Verify the Gateway actually serves the app
 
-First, that Envoy programmed it:
+First, check that Envoy accepted it and pushed config to the data plane. Look at the
+**listener** conditions, not just the top-level ones:
 
 ```bash
 kubectl get gateway demo-migration-gateway -n transfergw \
-  -o jsonpath='{.status.conditions[?(@.type=="Programmed")].status}{"\n"}'
+  -o jsonpath='{range .status.listeners[*]}{.name}:{"\n"}{range .conditions[*]}  {.type}={.status} ({.reason}){"\n"}{end}{end}'
 ```
 
-Expect `True`. Envoy Gateway creates a Service for each Gateway; find it and send a
-request through it:
+Expect `Accepted=True`, `Programmed=True` and `ResolvedRefs=True` on the `http` listener.
+`ResolvedRefs=True` is the one that confirms your generated HTTPRoute attached.
+
+> **Top-level `Programmed: False` with `AddressNotAssigned` is expected on many clusters
+> — it does not mean the migration failed.** Envoy Gateway derives that condition from the
+> proxy Service's *external* IP. On a cluster with no LoadBalancer provider (kind without
+> MetalLB, bare metal, most local setups) the Service stays `<pending>` forever, so no
+> address is ever assigned.
+>
+> The proxy still runs and still routes on its cluster IP, which is what the check below
+> uses. Confirm with `kubectl get svc -n envoy-gateway-system -l
+> gateway.envoyproxy.io/owning-gateway-name=demo-migration-gateway` — a `<pending>`
+> `EXTERNAL-IP` alongside a `2/2 Running` proxy pod is the signature. Treat the `200`
+> below as the real acceptance signal, not this condition.
+
+Envoy Gateway creates a Service for each Gateway; find it and send a request through it:
 
 ```bash
 GW_SVC=$(kubectl get svc -n envoy-gateway-system \
@@ -569,15 +584,33 @@ At least one selected Ingress could not be converted. `status.issues` names the 
 and the reason. The percentage is deliberately held at 0 rather than advancing over a
 partial migration.
 
-**Gateway has no address / `Programmed: False`**
+**`Programmed: False` with `AddressNotAssigned`**
+
+Not a failure. Your cluster has no LoadBalancer provider, so the proxy Service never gets
+an external IP and Envoy Gateway cannot assign the Gateway an address. Routing still
+works on the cluster IP.
+
+```bash
+kubectl get gateway demo-migration-gateway -n transfergw \
+  -o jsonpath='{range .status.conditions[*]}{.type}={.status} ({.reason}){"\n"}{end}'
+
+kubectl get svc -n envoy-gateway-system \
+  -l gateway.envoyproxy.io/owning-gateway-name=demo-migration-gateway
+```
+
+`Accepted=True` plus a `<pending>` `EXTERNAL-IP` confirms it. Use the in-cluster `curl`
+from step 7 as your acceptance check. To get a real address, install MetalLB, or set the
+proxy Service to `NodePort` via an Envoy Gateway `EnvoyProxy` resource.
+
+**`Programmed: False` for any other reason**
 
 ```bash
 kubectl get gateway demo-migration-gateway -n transfergw -o yaml | grep -A15 conditions
 kubectl logs -n envoy-gateway-system deployment/envoy-gateway --tail=50
 ```
 
-Usually a missing or mismatched GatewayClass — confirm `conversion.gatewayClass` matches
-`kubectl get gatewayclass`.
+If `Accepted` is also `False`, it is usually a missing or mismatched GatewayClass —
+confirm `conversion.gatewayClass` matches `kubectl get gatewayclass`.
 
 **Controller pod `ImagePullBackOff`**
 
