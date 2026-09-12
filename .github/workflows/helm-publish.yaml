@@ -52,12 +52,16 @@ jobs:
         run: |
           mkdir -p gh-pages
           cp helm-releases/*.tgz gh-pages/
+          cp chart/transfergw/artifacthub-repo.yml gh-pages/
           cd gh-pages
-          helm repo index . --url https://github.com/${{ github.repository }}/releases/download/helm-chart-latest/
+          if curl -fsSL -o index.yaml https://thev1ndu.github.io/transfergw/index.yaml; then
+            helm repo index . --url https://thev1ndu.github.io/transfergw/ --merge index.yaml
+          else
+            helm repo index . --url https://thev1ndu.github.io/transfergw/
+          fi
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: gh-pages
-          cname: charts.transfergw.dev
