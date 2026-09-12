@@ -1,5 +1,8 @@
 # TransferGW
 
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/transfergw)](https://artifacthub.io/packages/search?repo=transfergw)
+[![Docker](https://img.shields.io/docker/v/thev1ndu/transfergw?logo=docker&label=docker)](https://hub.docker.com/r/thev1ndu/transfergw)
+
 TransferGW is a Kubernetes operator that migrates `Ingress` resources to the
 [Gateway API](https://gateway-api.sigs.k8s.io/) without a rip-and-replace
 cutover. A single `TransferGW` custom resource selects a set of Ingresses by
