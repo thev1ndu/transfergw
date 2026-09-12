@@ -52,6 +52,26 @@ func init() {
 	utilruntime.Must(gatewayexamplecomv1beta1.AddToScheme(scheme))
 }
 
+// managerOptions builds the manager configuration.
+//
+// Kept separate from main so the wiring is testable: an unset
+// HealthProbeBindAddress silently disables the probe server, which the compiler
+// cannot catch and which crash-loops the pod under the chart's default probes.
+func managerOptions(metricsAddr, probeAddr string, webhookPort int, leaderElection bool) ctrl.Options {
+	return ctrl.Options{
+		Scheme: scheme,
+		Metrics: metricsserver.Options{
+			BindAddress: metricsAddr,
+		},
+		WebhookServer: webhook.NewServer(webhook.Options{
+			Port: webhookPort,
+		}),
+		HealthProbeBindAddress: probeAddr,
+		LeaderElection:         leaderElection,
+		LeaderElectionID:       "transfergw.t-1.dev",
+	}
+}
+
 func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
@@ -73,18 +93,8 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme: scheme,
-		Metrics: metricsserver.Options{
-			BindAddress: metricsAddr,
-		},
-		WebhookServer: webhook.NewServer(webhook.Options{
-			Port: webhookPort,
-		}),
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "transfergw.t-1.dev",
-	})
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(),
+		managerOptions(metricsAddr, probeAddr, webhookPort, enableLeaderElection))
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
