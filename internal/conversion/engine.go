@@ -25,13 +25,20 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+
+	"github.com/thev1ndu/transfergw/internal/conversion/annotation"
+	"github.com/thev1ndu/transfergw/internal/conversion/annotations/appgw"
+	"github.com/thev1ndu/transfergw/internal/conversion/annotations/certmanager"
+	"github.com/thev1ndu/transfergw/internal/conversion/annotations/nginx"
 )
 
-// Severity levels reported on a ConversionResult.
+// Severity levels reported on a ConversionResult. Aliased from the
+// annotation package so existing callers of conversion.Severity* keep
+// working unchanged.
 const (
-	SeverityInfo    = "info"
-	SeverityWarning = "warning"
-	SeverityError   = "error"
+	SeverityInfo    = annotation.SeverityInfo
+	SeverityWarning = annotation.SeverityWarning
+	SeverityError   = annotation.SeverityError
 )
 
 // Options controls how a single Ingress is converted.
@@ -66,13 +73,10 @@ func (p *AnnotationPolicy) dropped(key string) bool {
 	return false
 }
 
-// Issue is a warning or error raised while converting an Ingress.
-type Issue struct {
-	Ingress        string
-	Message        string
-	Severity       string
-	Recommendation string
-}
+// Issue is a warning or error raised while converting an Ingress. Aliased
+// from the annotation package so existing callers of conversion.Issue keep
+// working unchanged.
+type Issue = annotation.Issue
 
 // Result is the outcome of converting one Ingress.
 type Result struct {
@@ -95,11 +99,9 @@ func (r *Result) Failed() bool {
 }
 
 // Translator converts a single Ingress annotation into HTTPRoute filters.
-// Returning a nil filter slice with a non-nil issue means the annotation has no
-// portable Gateway API equivalent.
-type Translator interface {
-	Translate(key, value string) ([]gatewayv1.HTTPRouteFilter, *Issue)
-}
+// Aliased from the annotation package so existing callers of
+// conversion.Translator keep working unchanged.
+type Translator = annotation.Translator
 
 // Engine converts Ingress resources using a set of annotation translators.
 type Engine struct {
@@ -108,13 +110,13 @@ type Engine struct {
 
 // vendorRegistries lists every vendor's annotation-to-translator map.
 //
-// To support a new annotation, add it to the relevant annotations_<vendor>.go
-// file (or create one for a new vendor) and list its map here. NewEngine
-// never needs any other change.
+// To support a new vendor, add a package under internal/conversion/annotations
+// (see nginx, certmanager, appgw for the shape) and list its Translators map
+// here. NewEngine never needs any other change.
 var vendorRegistries = []map[string]Translator{
-	nginxTranslators,
-	certManagerTranslators,
-	appgwTranslators,
+	nginx.Translators,
+	certmanager.Translators,
+	appgw.Translators,
 }
 
 // vendorPrefixes lists every vendor annotation prefix this engine knows
@@ -122,9 +124,9 @@ var vendorRegistries = []map[string]Translator{
 // gap instead of silently ignored. List a new vendor's prefix here alongside
 // its entry in vendorRegistries.
 var vendorPrefixes = []string{
-	nginxAnnotationPrefix,
-	certManagerAnnotationPrefix,
-	appgwAnnotationPrefix,
+	nginx.Prefix,
+	certmanager.Prefix,
+	appgw.Prefix,
 }
 
 func isKnownVendorPrefix(annotation string) bool {

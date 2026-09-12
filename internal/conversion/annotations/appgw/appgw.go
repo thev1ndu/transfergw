@@ -12,97 +12,102 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package conversion
+// Package appgw translates Azure Application Gateway Ingress Controller
+// (AGIC) annotations into Gateway API filters, or an explicit warning where
+// there's no portable equivalent.
+package appgw
 
 import (
 	"k8s.io/utils/ptr"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+
+	"github.com/thev1ndu/transfergw/internal/conversion/annotation"
 )
 
-// appgwAnnotationPrefix is shared by every Azure Application Gateway Ingress
-// Controller (AGIC) annotation.
+// Prefix is shared by every AGIC annotation.
 //
 // This is distinct from an AKS cluster simply running ingress-nginx, which
-// nginxTranslators already covers regardless of cloud provider - AGIC is the
-// Azure-specific ingress controller, identified by this prefix.
-const appgwAnnotationPrefix = "appgw.ingress.kubernetes.io/"
+// the nginx package already covers regardless of cloud provider - AGIC is
+// the Azure-specific ingress controller, identified by this prefix.
+const Prefix = "appgw.ingress.kubernetes.io/"
 
-// appgwTranslators maps every AGIC annotation this engine knows about to the
-// Translator that handles it, following the same pattern as nginxTranslators.
+// Translators maps every AGIC annotation this engine knows about to the
+// Translator that handles it, following the same pattern as the nginx
+// package.
 //
 // AGIC has no per-Ingress request-rate-limit annotation: Application Gateway
 // rate limiting is done via a WAF_v2 policy or Azure Front Door, not
 // something an Ingress annotation can express, so there is deliberately no
 // entry here for it.
-var appgwTranslators = map[string]Translator{
+var Translators = map[string]annotation.Translator{
 	// --- Have a portable Gateway API filter -----------------------------
-	appgwAnnotationPrefix + "ssl-redirect":        &SSLRedirectTranslator{},
-	appgwAnnotationPrefix + "backend-path-prefix": &BackendPathPrefixTranslator{},
+	Prefix + "ssl-redirect":        &annotation.SSLRedirectTranslator{},
+	Prefix + "backend-path-prefix": &BackendPathPrefixTranslator{},
 
 	// --- No portable equivalent: reported, not silently dropped ---------
-	appgwAnnotationPrefix + "backend-hostname": unsupportedAnnotationTranslator(
+	Prefix + "backend-hostname": annotation.Unsupported(
 		"Gateway API filters cannot rewrite the Host header; use your implementation's " +
 			"traffic policy CRD instead."),
-	appgwAnnotationPrefix + "backend-protocol": unsupportedAnnotationTranslator(
+	Prefix + "backend-protocol": annotation.Unsupported(
 		"Set the backend Service port's appProtocol field instead."),
-	appgwAnnotationPrefix + "request-timeout": unsupportedAnnotationTranslator(
+	Prefix + "request-timeout": annotation.Unsupported(
 		"Set backend timeouts with HTTPRouteRule.timeouts.backendRequest instead."),
 
-	appgwAnnotationPrefix + "appgw-ssl-certificate": unsupportedAnnotationTranslator(
+	Prefix + "appgw-ssl-certificate": annotation.Unsupported(
 		"TLS certificates apply to the Gateway listener, not the HTTPRoute; " +
 			"configure certificateRefs on the Gateway resource instead."),
-	appgwAnnotationPrefix + "appgw-ssl-profile": unsupportedAnnotationTranslator(
+	Prefix + "appgw-ssl-profile": annotation.Unsupported(
 		"TLS policy applies to the Gateway listener, not the HTTPRoute; " +
 			"configure it on the Gateway resource instead."),
-	appgwAnnotationPrefix + "appgw-trusted-root-certificate": unsupportedAnnotationTranslator(
+	Prefix + "appgw-trusted-root-certificate": annotation.Unsupported(
 		"TLS trust applies to the Gateway listener, not the HTTPRoute; " +
 			"configure it on the Gateway resource instead."),
 
-	appgwAnnotationPrefix + "health-probe-hostname": unsupportedAnnotationTranslator(
+	Prefix + "health-probe-hostname": annotation.Unsupported(
 		"Use your implementation's health-check policy CRD instead."),
-	appgwAnnotationPrefix + "health-probe-port": unsupportedAnnotationTranslator(
+	Prefix + "health-probe-port": annotation.Unsupported(
 		"Use your implementation's health-check policy CRD instead."),
-	appgwAnnotationPrefix + "health-probe-path": unsupportedAnnotationTranslator(
+	Prefix + "health-probe-path": annotation.Unsupported(
 		"Use your implementation's health-check policy CRD instead."),
-	appgwAnnotationPrefix + "health-probe-status-codes": unsupportedAnnotationTranslator(
+	Prefix + "health-probe-status-codes": annotation.Unsupported(
 		"Use your implementation's health-check policy CRD instead."),
-	appgwAnnotationPrefix + "health-probe-interval": unsupportedAnnotationTranslator(
+	Prefix + "health-probe-interval": annotation.Unsupported(
 		"Use your implementation's health-check policy CRD instead."),
-	appgwAnnotationPrefix + "health-probe-timeout": unsupportedAnnotationTranslator(
+	Prefix + "health-probe-timeout": annotation.Unsupported(
 		"Use your implementation's health-check policy CRD instead."),
-	appgwAnnotationPrefix + "health-probe-unhealthy-threshold": unsupportedAnnotationTranslator(
+	Prefix + "health-probe-unhealthy-threshold": annotation.Unsupported(
 		"Use your implementation's health-check policy CRD instead."),
 
-	appgwAnnotationPrefix + "cookie-based-affinity": unsupportedAnnotationTranslator(
+	Prefix + "cookie-based-affinity": annotation.Unsupported(
 		"Use your implementation's session-affinity policy CRD instead."),
-	appgwAnnotationPrefix + "cookie-based-affinity-distinct-name": unsupportedAnnotationTranslator(
+	Prefix + "cookie-based-affinity-distinct-name": annotation.Unsupported(
 		"Use your implementation's session-affinity policy CRD instead."),
 
-	appgwAnnotationPrefix + "connection-draining": unsupportedAnnotationTranslator(
+	Prefix + "connection-draining": annotation.Unsupported(
 		"Use your implementation's traffic policy CRD instead."),
-	appgwAnnotationPrefix + "connection-draining-timeout": unsupportedAnnotationTranslator(
+	Prefix + "connection-draining-timeout": annotation.Unsupported(
 		"Use your implementation's traffic policy CRD instead."),
 
-	appgwAnnotationPrefix + "use-private-ip": unsupportedAnnotationTranslator(
+	Prefix + "use-private-ip": annotation.Unsupported(
 		"This is a Gateway/infrastructure-level concern, not an HTTPRoute one; " +
 			"configure the Gateway's listener/load balancer visibility instead."),
-	appgwAnnotationPrefix + "override-frontend-port": unsupportedAnnotationTranslator(
+	Prefix + "override-frontend-port": annotation.Unsupported(
 		"This is a Gateway listener port concern, not an HTTPRoute one; " +
 			"configure the Gateway's listener port instead."),
 
-	appgwAnnotationPrefix + "waf-policy-for-path": unsupportedAnnotationTranslator(
+	Prefix + "waf-policy-for-path": annotation.Unsupported(
 		"Use your implementation's WAF/security policy CRD instead."),
 
-	appgwAnnotationPrefix + "rewrite-rule-set": unsupportedAnnotationTranslator(
+	Prefix + "rewrite-rule-set": annotation.Unsupported(
 		"A rewrite rule set can express arbitrary header/URL rewrites that don't map " +
 			"to a single filter; reproduce the specific rule(s) with HTTPRoute " +
 			"URLRewrite/RequestHeaderModifier filters instead."),
-	appgwAnnotationPrefix + "rewrite-rule-set-custom-resource": unsupportedAnnotationTranslator(
+	Prefix + "rewrite-rule-set-custom-resource": annotation.Unsupported(
 		"A rewrite rule set can express arbitrary header/URL rewrites that don't map " +
 			"to a single filter; reproduce the specific rule(s) with HTTPRoute " +
 			"URLRewrite/RequestHeaderModifier filters instead."),
 
-	appgwAnnotationPrefix + "hostname-extension": unsupportedAnnotationTranslator(
+	Prefix + "hostname-extension": annotation.Unsupported(
 		"Add the extra hostname(s) directly to the generated HTTPRoute's " +
 			"spec.hostnames instead."),
 }
@@ -113,7 +118,7 @@ var appgwTranslators = map[string]Translator{
 // no additional validation before translating.
 type BackendPathPrefixTranslator struct{}
 
-func (t *BackendPathPrefixTranslator) Translate(key, value string) ([]gatewayv1.HTTPRouteFilter, *Issue) {
+func (t *BackendPathPrefixTranslator) Translate(key, value string) ([]gatewayv1.HTTPRouteFilter, *annotation.Issue) {
 	if value == "" {
 		return nil, nil
 	}

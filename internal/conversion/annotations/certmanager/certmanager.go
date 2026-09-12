@@ -12,31 +12,36 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package conversion
+// Package certmanager translates cert-manager annotations into an explicit
+// status note - cert-manager wiring belongs on the Gateway, not the
+// HTTPRoute, so there is nothing to translate, only to flag.
+package certmanager
 
 import (
 	"fmt"
 
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+
+	"github.com/thev1ndu/transfergw/internal/conversion/annotation"
 )
 
-// certManagerAnnotationPrefix is shared by every cert-manager annotation.
-const certManagerAnnotationPrefix = "cert-manager.io/"
+// Prefix is shared by every cert-manager annotation.
+const Prefix = "cert-manager.io/"
 
-// certManagerTranslators maps each supported cert-manager annotation to the
-// Translator that handles it. To add support for another cert-manager
-// annotation, implement Translator and add one entry here.
-var certManagerTranslators = map[string]Translator{
-	certManagerAnnotationPrefix + "cluster-issuer": &CertManagerTranslator{},
-	certManagerAnnotationPrefix + "issuer":         &CertManagerTranslator{},
+// Translators maps each supported cert-manager annotation to the Translator
+// that handles it. To add support for another cert-manager annotation,
+// implement annotation.Translator and add one entry here.
+var Translators = map[string]annotation.Translator{
+	Prefix + "cluster-issuer": &CertManagerTranslator{},
+	Prefix + "issuer":         &CertManagerTranslator{},
 }
 
 // CertManagerTranslator reports that cert-manager wiring moves to the Gateway.
 type CertManagerTranslator struct{}
 
-func (t *CertManagerTranslator) Translate(key, value string) ([]gatewayv1.HTTPRouteFilter, *Issue) {
-	return nil, &Issue{
-		Severity:       SeverityInfo,
+func (t *CertManagerTranslator) Translate(key, value string) ([]gatewayv1.HTTPRouteFilter, *annotation.Issue) {
+	return nil, &annotation.Issue{
+		Severity:       annotation.SeverityInfo,
 		Message:        fmt.Sprintf("%s=%s applies to the Gateway listener, not the HTTPRoute", key, value),
 		Recommendation: "Move this annotation onto the Gateway resource.",
 	}
