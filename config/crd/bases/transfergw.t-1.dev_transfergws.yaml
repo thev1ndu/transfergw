@@ -505,6 +505,7 @@ spec:
                 - Canary
                 - Complete
                 - Failed
+                - RolledBack
                 type: string
               processed:
                 description: Processed shows conversion statistics
@@ -538,6 +539,13 @@ spec:
                     format: int32
                     type: integer
                 type: object
+              rollbackGeneration:
+                description: |-
+                  RollbackGeneration is the spec generation that was rolled back. While it
+                  matches metadata.generation the rollout stays held, so an operator has to
+                  edit the spec before the canary is retried.
+                format: int64
+                type: integer
               rollbackReady:
                 description: RollbackReady indicates if rollback is ready
                 type: boolean

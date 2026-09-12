@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"path"
 	"sort"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -38,6 +39,7 @@ import (
 
 	transfergwv1beta1 "github.com/thev1ndu/transfergw/api/v1beta1"
 	"github.com/thev1ndu/transfergw/internal/conversion"
+	"github.com/thev1ndu/transfergw/internal/health"
 )
 
 const (
@@ -50,6 +52,11 @@ const (
 
 	// requeueInterval paces reconciles while a rollout is still progressing.
 	requeueInterval = 30 * time.Second
+
+	// defaultHealthCheckInterval matches the CRD default for
+	// spec.monitoring.interval, which is coarser than requeueInterval so that
+	// health checks do not run on every reconcile.
+	defaultHealthCheckInterval = 5 * time.Minute
 )
 
 // Migration phases.
@@ -60,13 +67,33 @@ const (
 	phaseCanary     = "Canary"
 	phaseComplete   = "Complete"
 	phaseFailed     = "Failed"
+
+	// phaseRolledBack means a health threshold was breached mid-canary and the
+	// Gateway's traffic share was taken back to rollbackPercentage.
+	phaseRolledBack = "RolledBack"
 )
+
+// rollbackPercentage is where a health rollback parks the Gateway's traffic
+// share: all the way back at zero rather than at the canary's initial step.
+//
+// Dropping to the initial step would leave real users on a path that was just
+// measured as unhealthy, and the initial step is itself a percentage the
+// migration already passed through, so it carries no evidence of being safe.
+// Zero is the only share that is known good, since it is where the migration
+// started.
+const rollbackPercentage int32 = 0
 
 // TransferGWReconciler reconciles a TransferGW object
 type TransferGWReconciler struct {
 	client.Client
 	Scheme           *runtime.Scheme
 	ConversionEngine *conversion.Engine
+
+	// MetricsSource is optional. Without one, health comparison is skipped and
+	// a migration behaves exactly as it did before rollback support existed.
+	MetricsSource health.MetricsSource
+
+	warnNoMetricsSource sync.Once
 }
 
 // +kubebuilder:rbac:groups=transfergw.t-1.dev,resources=transfergws,verbs=create;delete;deletecollection;get;list;patch;update;watch
@@ -93,6 +120,18 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	if migration.Spec.Rollout.Paused {
 		logger.Info("migration is paused, skipping reconcile")
+		return ctrl.Result{}, nil
+	}
+
+	// A rolled-back migration holds until a human edits the spec. Re-running
+	// the rollout would put the canary straight back on the percentage that
+	// just failed its health check, and the next check would roll it back
+	// again: a flap that moves user traffic on and off a broken path every few
+	// minutes. Bumping the generation is the operator saying they have looked.
+	if migration.Status.Phase == phaseRolledBack &&
+		migration.Status.RollbackGeneration == migration.Generation {
+		logger.Info("held after a health rollback; edit the TransferGW spec to resume",
+			"reason", rollbackReason(migration))
 		return ctrl.Result{}, nil
 	}
 
@@ -183,6 +222,23 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	status.Issues = issues
 
 	percentage := rolloutPercentage(migration, converted, failed)
+
+	// Health only says something useful while traffic is genuinely split: at
+	// 0% there is nothing on the Gateway path to measure, and at 100% there is
+	// no Ingress path left to compare against.
+	var breach *health.Breach
+	if percentage > 0 && percentage < 100 {
+		if breach = r.evaluateHealth(ctx, migration, health.Target{
+			GatewayName:      gatewayName,
+			GatewayNamespace: targetNS,
+			Namespaces:       ingressNamespaces(ingresses),
+		}, status); breach != nil {
+			logger.Info("health threshold breached, rolling the migration back",
+				"breach", breach.String(), "from", percentage)
+			percentage = rollbackPercentage
+		}
+	}
+
 	status.CompletionPercentage = percentage
 	status.TrafficRoutingStatus = &transfergwv1beta1.TrafficRoutingStatus{
 		Gateway: percentage,
@@ -191,6 +247,12 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	status.RollbackReady = converted > 0
 
 	switch {
+	case breach != nil:
+		status.Phase = phaseRolledBack
+		status.RollbackGeneration = migration.Generation
+		msg := fmt.Sprintf("Rolled back to %d%%: %s", rollbackPercentage, breach)
+		setCondition(status, "Ready", metav1.ConditionFalse, "HealthRollback", msg)
+		setCondition(status, conditionRolledBack, metav1.ConditionTrue, "ThresholdBreached", msg)
 	case total == 0:
 		status.Phase = phaseAnalyzing
 		setCondition(status, "Ready", metav1.ConditionFalse, "NoMatchingIngresses",
@@ -209,6 +271,12 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			fmt.Sprintf("Gateway is receiving %d%% of traffic", percentage))
 	}
 
+	if breach == nil && hasCondition(status, conditionRolledBack) {
+		status.RollbackGeneration = 0
+		setCondition(status, conditionRolledBack, metav1.ConditionFalse, "Resumed",
+			"Rollout resumed after the spec was edited")
+	}
+
 	now := metav1.Now()
 	status.LastTransitionTime = &now
 
@@ -216,7 +284,7 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, fmt.Errorf("updating status: %w", err)
 	}
 
-	if status.Phase == phaseComplete || status.Phase == phaseFailed {
+	if status.Phase == phaseComplete || status.Phase == phaseFailed || status.Phase == phaseRolledBack {
 		return ctrl.Result{}, nil
 	}
 	return ctrl.Result{RequeueAfter: requeueInterval}, nil
@@ -518,6 +586,127 @@ func canaryPercentage(migration *transfergwv1beta1.TransferGW) int32 {
 		return 0
 	}
 	return pct
+}
+
+// conditionRolledBack surfaces a health rollback in kubectl describe, separate
+// from Ready so the reason survives later Ready transitions.
+const conditionRolledBack = "RolledBack"
+
+// evaluateHealth compares the Ingress and Gateway paths and reports the first
+// breached threshold. It returns nil whenever health checking does not apply:
+// monitoring disabled, no thresholds configured, no metrics source wired up,
+// the check interval not elapsed, or the backend being unreachable.
+func (r *TransferGWReconciler) evaluateHealth(
+	ctx context.Context,
+	migration *transfergwv1beta1.TransferGW,
+	target health.Target,
+	status *transfergwv1beta1.TransferGWStatus,
+) *health.Breach {
+	logger := log.FromContext(ctx)
+
+	monitoring := migration.Spec.Monitoring
+	if monitoring == nil || !monitoring.Enabled || monitoring.Thresholds == nil {
+		return nil
+	}
+	if r.MetricsSource == nil {
+		r.warnNoMetricsSource.Do(func() {
+			logger.Info("monitoring is enabled but the controller has no metrics source; " +
+				"health-based rollback is disabled")
+		})
+		return nil
+	}
+	if status.NextHealthCheck != nil && time.Now().Before(status.NextHealthCheck.Time) {
+		return nil
+	}
+
+	comparison, err := r.MetricsSource.Compare(ctx, migration, target)
+	if err != nil {
+		// An unreachable metrics backend is not evidence of an unhealthy
+		// Gateway, so it must not move traffic.
+		logger.Error(err, "comparing migration health, leaving the rollout where it is")
+		return nil
+	}
+
+	now := metav1.Now()
+	next := metav1.NewTime(now.Add(healthCheckInterval(monitoring)))
+	status.LastHealthCheck = &now
+	status.NextHealthCheck = &next
+	status.MetricsStatus = toMetricsStatus(comparison)
+
+	return health.Evaluate(monitoring.Thresholds, comparison)
+}
+
+func healthCheckInterval(monitoring *transfergwv1beta1.MonitoringSpec) time.Duration {
+	if monitoring.Interval != "" {
+		if d, err := time.ParseDuration(monitoring.Interval); err == nil && d > 0 {
+			return d
+		}
+	}
+	return defaultHealthCheckInterval
+}
+
+func toMetricsStatus(c *health.Comparison) *transfergwv1beta1.MetricsStatus {
+	if c == nil {
+		return nil
+	}
+	out := &transfergwv1beta1.MetricsStatus{
+		ErrorRate:  metricComparison(c.ErrorRate, ""),
+		Latency:    metricComparison(c.LatencyMs, "ms"),
+		Throughput: metricComparison(c.Throughput, ""),
+	}
+	if out.ErrorRate == nil && out.Latency == nil && out.Throughput == nil {
+		return nil
+	}
+	return out
+}
+
+func metricComparison(m *health.Metric, unit string) *transfergwv1beta1.MetricComparison {
+	if m == nil {
+		return nil
+	}
+	status := "degraded"
+	if m.Gateway <= m.Ingress {
+		status = "healthy"
+	}
+	return &transfergwv1beta1.MetricComparison{
+		Ingress: fmt.Sprintf("%g%s", m.Ingress, unit),
+		Gateway: fmt.Sprintf("%g%s", m.Gateway, unit),
+		Delta:   fmt.Sprintf("%+g%s", m.Gateway-m.Ingress, unit),
+		Status:  status,
+	}
+}
+
+func ingressNamespaces(ingresses []networkingv1.Ingress) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for i := range ingresses {
+		ns := ingresses[i].Namespace
+		if _, dup := seen[ns]; dup {
+			continue
+		}
+		seen[ns] = struct{}{}
+		out = append(out, ns)
+	}
+	return out
+}
+
+func hasCondition(status *transfergwv1beta1.TransferGWStatus, condType string) bool {
+	for i := range status.Conditions {
+		if status.Conditions[i].Type == condType {
+			return true
+		}
+	}
+	return false
+}
+
+// rollbackReason recovers the recorded breach message for logging while held.
+func rollbackReason(migration *transfergwv1beta1.TransferGW) string {
+	for i := range migration.Status.Conditions {
+		if migration.Status.Conditions[i].Type == conditionRolledBack {
+			return migration.Status.Conditions[i].Message
+		}
+	}
+	return ""
 }
 
 func annotationPolicy(migration *transfergwv1beta1.TransferGW) *conversion.AnnotationPolicy {

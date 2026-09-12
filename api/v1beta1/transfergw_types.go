@@ -301,7 +301,7 @@ type WebhookSpec struct {
 // TransferGWStatus defines the observed state of TransferGW
 type TransferGWStatus struct {
 	// Phase is the current migration phase
-	// +kubebuilder:validation:Enum=Pending;Analyzing;Converting;Deploying;Canary;Complete;Failed
+	// +kubebuilder:validation:Enum=Pending;Analyzing;Converting;Deploying;Canary;Complete;Failed;RolledBack
 	Phase string `json:"phase,omitempty"`
 
 	// CompletionPercentage is the traffic percentage on gateway
@@ -327,6 +327,11 @@ type TransferGWStatus struct {
 
 	// RollbackReady indicates if rollback is ready
 	RollbackReady bool `json:"rollbackReady,omitempty"`
+
+	// RollbackGeneration is the spec generation that was rolled back. While it
+	// matches metadata.generation the rollout stays held, so an operator has to
+	// edit the spec before the canary is retried.
+	RollbackGeneration int64 `json:"rollbackGeneration,omitempty"`
 
 	// LastHealthCheck is the last health check time
 	LastHealthCheck *metav1.Time `json:"lastHealthCheck,omitempty"`

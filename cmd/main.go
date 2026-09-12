@@ -34,6 +34,7 @@ import (
 	gatewayexamplecomv1beta1 "github.com/thev1ndu/transfergw/api/v1beta1"
 	"github.com/thev1ndu/transfergw/internal/controller"
 	"github.com/thev1ndu/transfergw/internal/conversion"
+	"github.com/thev1ndu/transfergw/internal/health"
 )
 
 var (
@@ -75,8 +76,12 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var webhookPort int
+	var prometheusURL string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
+	flag.StringVar(&prometheusURL, "prometheus-url", os.Getenv("TRANSFERGW_PROMETHEUS_URL"),
+		"Base URL of a Prometheus query API, e.g. http://prometheus.monitoring.svc:9090. "+
+			"Health-based automatic rollback is disabled when this is empty.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
@@ -100,10 +105,19 @@ func main() {
 
 	conversionEngine := conversion.NewEngine()
 
+	// Left nil unless an endpoint was given, so clusters without Prometheus
+	// keep the pre-rollback behaviour instead of failing every health check.
+	var metricsSource health.MetricsSource
+	if prometheusURL != "" {
+		metricsSource = health.NewPrometheusSource(prometheusURL)
+		setupLog.Info("health-based rollback enabled", "prometheusURL", prometheusURL)
+	}
+
 	if err = (&controller.TransferGWReconciler{
 		Client:           mgr.GetClient(),
 		Scheme:           mgr.GetScheme(),
 		ConversionEngine: conversionEngine,
+		MetricsSource:    metricsSource,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "TransferGW")
 		os.Exit(1)

@@ -34,7 +34,7 @@ controller actually does today versus what's designed but not yet built.
 | nginx & cert-manager annotation translation | ✅ Available |
 | Percentage-based traffic rollout | ✅ Available |
 | Orphaned route cleanup | ✅ Available |
-| Health-based automatic rollback | 🚧 Planned |
+| Health-based automatic rollback | ✅ Available |
 | Lifecycle hooks (pre/post conversion webhooks) | 🚧 Planned |
 | Multi-gateway support (Istio, Kong, cloud LBs) | 🚧 Planned |
 | Multi-cluster migrations | 🚧 Planned |
