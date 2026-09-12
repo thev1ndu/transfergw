@@ -18,9 +18,55 @@ watch, not something you script by hand across dozens of clusters.
 
 ## Getting started
 
-See [docs/SETUP.md](docs/SETUP.md) for installation and
-[docs/TESTING.md](docs/TESTING.md) for a full walkthrough on a
-local kind cluster.
+### Install
+
+```bash
+helm repo add transfergw https://thev1ndu.github.io/transfergw
+helm repo update
+
+helm install transfergw transfergw/transfergw \
+  --namespace transfergw --create-namespace
+
+kubectl rollout status deployment/transfergw-controller -n transfergw
+```
+
+Or pull directly from the OCI registry instead of adding a classic repo:
+
+```bash
+helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
+  --version 1.0.0 --namespace transfergw --create-namespace
+```
+
+### Run a migration
+
+```bash
+kubectl label ingress my-ingress -n my-namespace migrate=true
+
+kubectl apply -f - <<'EOF'
+apiVersion: transfergw.t-1.dev/v1beta1
+kind: TransferGW
+metadata:
+  name: my-migration
+  namespace: my-namespace
+spec:
+  selector:
+    namespaces: [my-namespace]
+    ingressSelector: {matchLabels: {migrate: "true"}}
+  conversion:
+    gatewayClass: <your-gatewayclass>
+    generateGateway: true
+  rollout:
+    mode: immediate
+EOF
+
+kubectl get transfergw my-migration -n my-namespace -w
+kubectl get httproute -n my-namespace
+```
+
+See [docs/SETUP.md](docs/SETUP.md) for the full `spec` reference (rollout
+strategies, health-based rollback, alerting, lifecycle hooks) and
+[docs/TESTING.md](docs/TESTING.md) for a complete walkthrough on a local kind
+cluster.
 
 ## Project status
 
