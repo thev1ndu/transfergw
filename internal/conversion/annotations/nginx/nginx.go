@@ -92,10 +92,8 @@ var Translators = map[string]annotation.Translator{
 		"Set request body size limits with your implementation's traffic policy CRD."),
 	Prefix + "proxy-connect-timeout": annotation.Unsupported(
 		"Set connection timeouts with your implementation's traffic policy CRD."),
-	Prefix + "proxy-read-timeout": annotation.Unsupported(
-		"Set backend timeouts with HTTPRouteRule.timeouts.backendRequest instead."),
-	Prefix + "proxy-send-timeout": annotation.Unsupported(
-		"Set backend timeouts with HTTPRouteRule.timeouts.backendRequest instead."),
+	Prefix + "proxy-read-timeout": &annotation.BackendRequestTimeoutTranslator{},
+	Prefix + "proxy-send-timeout": &annotation.BackendRequestTimeoutTranslator{},
 	Prefix + "backend-protocol": annotation.Unsupported(
 		"Set the backend Service port's appProtocol field instead."),
 
@@ -109,10 +107,15 @@ var Translators = map[string]annotation.Translator{
 	Prefix + "canary-by-cookie": annotation.Unsupported(
 		"Use HTTPRoute cookie/header matches across two rules instead of a canary annotation."),
 
-	Prefix + "affinity": annotation.Unsupported(
-		"Use your implementation's session-affinity/load-balancing policy CRD instead."),
+	Prefix + "affinity": &annotation.CookieSessionPersistenceTranslator{},
+
+	// session-cookie-name needs the sibling affinity annotation's value to
+	// combine correctly (a custom cookie name only means something once
+	// cookie affinity is enabled) - out of reach for a single-annotation
+	// Translator, so this stays unsupported.
 	Prefix + "session-cookie-name": annotation.Unsupported(
-		"Use your implementation's session-affinity policy CRD instead."),
+		"Use your implementation's session-affinity policy CRD instead, or set a fixed " +
+			"sessionName directly on the HTTPRoute's sessionPersistence field."),
 	Prefix + "session-cookie-hash": annotation.Unsupported(
 		"Use your implementation's session-affinity policy CRD instead."),
 

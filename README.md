@@ -82,6 +82,7 @@ controller actually does today versus what's designed but not yet built.
 - [x] 2.1 Full ingress-nginx annotation coverage (real filters where Gateway API has one, explicit guidance where it doesn't)
 - [x] 2.2 cert-manager annotation translation
 - [x] 2.3 Azure Application Gateway Ingress Controller (AGIC) annotation coverage
+- [x] 2.4 Rule-level translation (session affinity → `sessionPersistence`, timeout annotations → `timeouts`) alongside filter-level translation, so a translated annotation doesn't have to look like the original mechanism — it has to produce the same effect
 
 **3. Rollout & safety**
 - [x] 3.1 Percentage-based traffic rollout (immediate, gradual, canary)

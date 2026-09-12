@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -166,7 +167,7 @@ func (e *Engine) ConvertIngress(ing *networkingv1.Ingress, opts Options) *Result
 		return res
 	}
 
-	filters, filterIssues := e.convertAnnotations(ing, opts.AnnotationPolicy)
+	filters, ruleEffect, filterIssues := e.convertAnnotations(ing, opts.AnnotationPolicy)
 	res.Issues = append(res.Issues, filterIssues...)
 
 	hostnames := map[string]struct{}{}
@@ -195,6 +196,10 @@ func (e *Engine) ConvertIngress(ing *networkingv1.Ingress, opts Options) *Result
 			}
 			if len(filters) > 0 {
 				r.Filters = filters
+			}
+			if ruleEffect != nil {
+				r.SessionPersistence = ruleEffect.SessionPersistence
+				r.Timeouts = ruleEffect.Timeouts
 			}
 			rules = append(rules, r)
 		}
@@ -259,34 +264,114 @@ func (e *Engine) ConvertIngress(ing *networkingv1.Ingress, opts Options) *Result
 }
 
 // convertAnnotations runs every registered translator over the Ingress
-// annotations, returning the filters they produced.
-func (e *Engine) convertAnnotations(ing *networkingv1.Ingress, policy *AnnotationPolicy) ([]gatewayv1.HTTPRouteFilter, []Issue) {
+// annotations, returning the filters they produced and any HTTPRouteRule-level
+// effect (session affinity, timeouts) they set - the two things a Translator
+// can contribute, since some Gateway API behaviour (SessionPersistence,
+// Timeouts) lives on the rule itself, not in a filter within it.
+func (e *Engine) convertAnnotations(
+	ing *networkingv1.Ingress,
+	policy *AnnotationPolicy,
+) ([]gatewayv1.HTTPRouteFilter, *annotation.RuleEffect, []Issue) {
 	var filters []gatewayv1.HTTPRouteFilter
+	var effect *annotation.RuleEffect
 	var issues []Issue
 
 	for _, k := range sortedMapKeys(ing.Annotations) {
 		if policy.dropped(k) {
 			continue
 		}
-		if t := e.translators[k]; t != nil {
-			f, issue := t.Translate(k, ing.Annotations[k])
-			filters = append(filters, f...)
-			if issue != nil {
-				issue.Ingress = key(ing)
-				issues = append(issues, *issue)
+		t := e.translators[k]
+		if t == nil {
+			if isKnownVendorPrefix(k) {
+				issues = append(issues, Issue{
+					Ingress:        key(ing),
+					Severity:       SeverityWarning,
+					Message:        fmt.Sprintf("annotation %q has no registered translator", k),
+					Recommendation: "Reproduce this behaviour with an implementation-specific policy, or drop it.",
+				})
 			}
 			continue
 		}
-		if isKnownVendorPrefix(k) {
-			issues = append(issues, Issue{
-				Ingress:        key(ing),
-				Severity:       SeverityWarning,
-				Message:        fmt.Sprintf("annotation %q has no registered translator", k),
-				Recommendation: "Reproduce this behaviour with an implementation-specific policy, or drop it.",
-			})
+
+		f, issue := t.Translate(k, ing.Annotations[k])
+		filters = append(filters, f...)
+		if issue != nil {
+			issue.Ingress = key(ing)
+			issues = append(issues, *issue)
 		}
+
+		effector, ok := t.(annotation.RuleEffector)
+		if !ok {
+			continue
+		}
+		eff, issue := effector.Effect(k, ing.Annotations[k])
+		if issue != nil {
+			issue.Ingress = key(ing)
+			issues = append(issues, *issue)
+		}
+		effect = mergeRuleEffect(effect, eff)
 	}
-	return filters, issues
+	return filters, effect, issues
+}
+
+// mergeRuleEffect combines two RuleEffects into one, since exactly one
+// SessionPersistence and one Timeouts can end up on an HTTPRouteRule even
+// when more than one annotation contributes to them (e.g. nginx's
+// proxy-read-timeout and proxy-send-timeout both target backendRequest).
+func mergeRuleEffect(a, b *annotation.RuleEffect) *annotation.RuleEffect {
+	if a == nil {
+		return b
+	}
+	if b == nil {
+		return a
+	}
+	merged := &annotation.RuleEffect{Timeouts: mergeTimeouts(a.Timeouts, b.Timeouts)}
+	// Sorted-key iteration order makes this deterministic: whichever
+	// annotation is later alphabetically wins a genuine collision, which is
+	// an edge case (two different vendors' affinity annotations on one
+	// Ingress) rather than something expected to happen in practice.
+	if b.SessionPersistence != nil {
+		merged.SessionPersistence = b.SessionPersistence
+	} else {
+		merged.SessionPersistence = a.SessionPersistence
+	}
+	return merged
+}
+
+// mergeTimeouts combines two Timeouts, taking the larger duration per field
+// when both set it, so neither annotation's constraint is silently dropped.
+func mergeTimeouts(a, b *gatewayv1.HTTPRouteTimeouts) *gatewayv1.HTTPRouteTimeouts {
+	if a == nil {
+		return b
+	}
+	if b == nil {
+		return a
+	}
+	return &gatewayv1.HTTPRouteTimeouts{
+		Request:        longerDuration(a.Request, b.Request),
+		BackendRequest: longerDuration(a.BackendRequest, b.BackendRequest),
+	}
+}
+
+func longerDuration(a, b *gatewayv1.Duration) *gatewayv1.Duration {
+	if a == nil {
+		return b
+	}
+	if b == nil {
+		return a
+	}
+	da, errA := time.ParseDuration(string(*a))
+	db, errB := time.ParseDuration(string(*b))
+	if errA != nil {
+		return b
+	}
+	if errB != nil {
+		return a
+	}
+	if da >= db {
+		return a
+	}
+	return b
 }
 
 func key(ing *networkingv1.Ingress) string {

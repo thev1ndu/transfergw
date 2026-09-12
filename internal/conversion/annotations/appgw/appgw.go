@@ -44,14 +44,16 @@ var Translators = map[string]annotation.Translator{
 	Prefix + "ssl-redirect":        &annotation.SSLRedirectTranslator{},
 	Prefix + "backend-path-prefix": &BackendPathPrefixTranslator{},
 
+	// --- Set a real HTTPRouteRule field (session persistence, timeouts) -
+	Prefix + "cookie-based-affinity": &annotation.CookieSessionPersistenceTranslator{},
+	Prefix + "request-timeout":       &annotation.RequestTimeoutTranslator{},
+
 	// --- No portable equivalent: reported, not silently dropped ---------
 	Prefix + "backend-hostname": annotation.Unsupported(
 		"Gateway API filters cannot rewrite the Host header; use your implementation's " +
 			"traffic policy CRD instead."),
 	Prefix + "backend-protocol": annotation.Unsupported(
 		"Set the backend Service port's appProtocol field instead."),
-	Prefix + "request-timeout": annotation.Unsupported(
-		"Set backend timeouts with HTTPRouteRule.timeouts.backendRequest instead."),
 
 	Prefix + "appgw-ssl-certificate": annotation.Unsupported(
 		"TLS certificates apply to the Gateway listener, not the HTTPRoute; " +
@@ -78,10 +80,13 @@ var Translators = map[string]annotation.Translator{
 	Prefix + "health-probe-unhealthy-threshold": annotation.Unsupported(
 		"Use your implementation's health-check policy CRD instead."),
 
-	Prefix + "cookie-based-affinity": annotation.Unsupported(
-		"Use your implementation's session-affinity policy CRD instead."),
+	// cookie-based-affinity-distinct-name asks for a per-Ingress-unique cookie
+	// name, which needs the value of the sibling cookie-based-affinity
+	// annotation to combine correctly - out of reach for a single-annotation
+	// Translator, so this stays unsupported.
 	Prefix + "cookie-based-affinity-distinct-name": annotation.Unsupported(
-		"Use your implementation's session-affinity policy CRD instead."),
+		"Use your implementation's session-affinity policy CRD instead, or set a fixed " +
+			"sessionName directly on the HTTPRoute's sessionPersistence field."),
 
 	Prefix + "connection-draining": annotation.Unsupported(
 		"Use your implementation's traffic policy CRD instead."),

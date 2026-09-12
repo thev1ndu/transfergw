@@ -67,7 +67,7 @@ func TestEveryRegisteredAnnotationHasATranslator(t *testing.T) {
 func TestUnsupportedAnnotationsWarnWithSpecificGuidance(t *testing.T) {
 	for _, key := range []string{
 		Prefix + "waf-policy-for-path",
-		Prefix + "cookie-based-affinity",
+		Prefix + "cookie-based-affinity-distinct-name",
 		Prefix + "rewrite-rule-set",
 	} {
 		tr, ok := Translators[key]

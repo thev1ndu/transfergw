@@ -26,6 +26,8 @@ package annotation
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"k8s.io/utils/ptr"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
@@ -51,6 +53,94 @@ type Issue struct {
 // no portable Gateway API equivalent.
 type Translator interface {
 	Translate(key, value string) ([]gatewayv1.HTTPRouteFilter, *Issue)
+}
+
+// RuleEffect captures per-Ingress modifications a Translator wants applied to
+// the enclosing HTTPRouteRule itself, rather than a filter within it.
+// SessionPersistence and Timeouts are HTTPRouteRule fields, not filters -
+// nothing a Translator returns from Translate can reach them.
+type RuleEffect struct {
+	SessionPersistence *gatewayv1.SessionPersistence
+	Timeouts           *gatewayv1.HTTPRouteTimeouts
+}
+
+// RuleEffector is implemented by a Translator that also needs to set fields
+// on the enclosing HTTPRouteRule (session affinity, timeouts) that a filter
+// cannot express. A Translator implementing this still implements Translate
+// too (returning nil, nil when it has no filter to contribute), so it works
+// as a normal, filter-only Translator wherever RuleEffector isn't checked.
+type RuleEffector interface {
+	Effect(key, value string) (*RuleEffect, *Issue)
+}
+
+// ParseSecondsDuration parses a plain integer number of seconds (as nginx and
+// AGIC both encode their timeout annotations) into a Gateway API Duration.
+func ParseSecondsDuration(key, value string) (*gatewayv1.Duration, *Issue) {
+	n, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || n < 0 {
+		return nil, &Issue{
+			Severity:       SeverityWarning,
+			Message:        fmt.Sprintf("%s value %q is not a non-negative whole number of seconds", key, value),
+			Recommendation: "Set this annotation to a whole number of seconds, e.g. \"30\".",
+		}
+	}
+	d := gatewayv1.Duration(fmt.Sprintf("%ds", n))
+	return &d, nil
+}
+
+// CookieSessionPersistenceTranslator maps an nginx- or AGIC-style boolean
+// "enable cookie affinity" annotation onto HTTPRouteRule.sessionPersistence.
+// It contributes no filter - Translate always returns nil, nil - only a
+// RuleEffect, so it's used via RuleEffector.
+type CookieSessionPersistenceTranslator struct{}
+
+func (t *CookieSessionPersistenceTranslator) Translate(key, value string) ([]gatewayv1.HTTPRouteFilter, *Issue) {
+	return nil, nil
+}
+
+func (t *CookieSessionPersistenceTranslator) Effect(key, value string) (*RuleEffect, *Issue) {
+	if value != "true" && value != "cookie" {
+		return nil, nil
+	}
+	cookieType := gatewayv1.CookieBasedSessionPersistence
+	return &RuleEffect{
+		SessionPersistence: &gatewayv1.SessionPersistence{Type: &cookieType},
+	}, nil
+}
+
+// BackendRequestTimeoutTranslator maps a per-request-to-backend timeout
+// annotation (nginx's proxy-read-timeout/proxy-send-timeout) onto
+// HTTPRouteRule.timeouts.backendRequest. It contributes no filter - only a
+// RuleEffect, so it's used via RuleEffector.
+type BackendRequestTimeoutTranslator struct{}
+
+func (t *BackendRequestTimeoutTranslator) Translate(key, value string) ([]gatewayv1.HTTPRouteFilter, *Issue) {
+	return nil, nil
+}
+
+func (t *BackendRequestTimeoutTranslator) Effect(key, value string) (*RuleEffect, *Issue) {
+	d, issue := ParseSecondsDuration(key, value)
+	if d == nil {
+		return nil, issue
+	}
+	return &RuleEffect{Timeouts: &gatewayv1.HTTPRouteTimeouts{BackendRequest: d}}, nil
+}
+
+// RequestTimeoutTranslator maps an overall request-timeout annotation
+// (AGIC's request-timeout) onto HTTPRouteRule.timeouts.request. It
+// contributes no filter - only a RuleEffect, so it's used via RuleEffector.
+type RequestTimeoutTranslator struct{}
+
+func (t *RequestTimeoutTranslator) Translate(key, value string) ([]gatewayv1.HTTPRouteFilter, *Issue) {
+	return nil, nil
+}
+
+func (t *RequestTimeoutTranslator) Effect(key, value string) (*RuleEffect, *Issue) {
+	d, issue := ParseSecondsDuration(key, value)
+	if d == nil {
+		return nil, issue
+	}
+	return &RuleEffect{Timeouts: &gatewayv1.HTTPRouteTimeouts{Request: d}}, nil
 }
 
 // SSLRedirectTranslator maps an nginx- or AGIC-style "ssl-redirect" boolean
