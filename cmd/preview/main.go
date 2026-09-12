@@ -114,7 +114,10 @@ func run(file string) error {
 	if targetNS == "" {
 		targetNS = migration.Namespace
 	}
-	gatewayName := migration.Name + "-gateway"
+	gatewayName := migration.Spec.Conversion.GatewayName
+	if gatewayName == "" {
+		gatewayName = migration.Name + "-gateway"
+	}
 
 	var policy *conversion.AnnotationPolicy
 	if p := migration.Spec.Conversion.AnnotationPolicy; p != nil {
