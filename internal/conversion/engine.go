@@ -90,8 +90,13 @@ type Issue = annotation.Issue
 // Result is the outcome of converting one Ingress.
 type Result struct {
 	// Route is the generated HTTPRoute, or nil when the Ingress produced no
-	// usable rules.
+	// usable rules or converted to a GRPCRoute instead (see GRPCRoute).
 	Route *gatewayv1.HTTPRoute
+
+	// GRPCRoute is set instead of Route when the Ingress is marked for gRPC
+	// backends (backend-protocol: GRPC, nginx or AGIC). Exactly one of Route
+	// or GRPCRoute is non-nil on a successful conversion.
+	GRPCRoute *gatewayv1.GRPCRoute
 
 	// Issues collects anything the caller should surface on status.
 	Issues []Issue
@@ -173,6 +178,17 @@ func (e *Engine) ConvertIngress(ing *networkingv1.Ingress, opts Options) *Result
 	res := &Result{}
 	if ing == nil {
 		return res
+	}
+
+	// gRPC backends get their own Gateway API resource type. Ingress carries
+	// no per-method gRPC routing information either way (nginx's
+	// backend-protocol: GRPC only changes the proxy protocol nginx speaks to
+	// the backend, not the Ingress spec), and HTTPRouteFilter/GRPCRouteFilter
+	// are different types, so annotation-derived filters don't carry over -
+	// this is a structurally different conversion, not a variant of the one
+	// below.
+	if isGRPCBackend(ing) {
+		return convertGRPCRoute(ing, opts)
 	}
 
 	filters, ruleEffect, filterIssues := e.convertAnnotations(ing, opts.AnnotationPolicy)

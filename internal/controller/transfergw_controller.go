@@ -228,8 +228,23 @@ func (r *TransferGWReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		result := r.ConversionEngine.ConvertIngress(ing, convertOpts)
 		issues = append(issues, toStatusIssues(result.Issues)...)
 
-		if result.Route == nil || result.Failed() {
+		if result.Failed() || (result.Route == nil && result.GRPCRoute == nil) {
 			failed++
+			continue
+		}
+
+		if result.GRPCRoute != nil {
+			if err := r.applyGRPCRoute(ctx, migration, result.GRPCRoute); err != nil {
+				failed++
+				issues = append(issues, transfergwv1beta1.ConversionIssue{
+					Ingress:  ing.Namespace + "/" + ing.Name,
+					Severity: conversion.SeverityError,
+					Issue:    fmt.Sprintf("applying GRPCRoute: %v", err),
+				})
+				continue
+			}
+			desired[result.GRPCRoute.Namespace+"/"+result.GRPCRoute.Name] = struct{}{}
+			converted++
 			continue
 		}
 
@@ -600,21 +615,51 @@ func (r *TransferGWReconciler) applyRoute(
 	return err
 }
 
-// pruneOrphanedRoutes deletes generated routes whose source Ingress no longer
-// matches the selector.
+// applyGRPCRoute is applyRoute's GRPCRoute counterpart, for an Ingress marked
+// for gRPC backends (see conversion.isGRPCBackend).
+func (r *TransferGWReconciler) applyGRPCRoute(
+	ctx context.Context,
+	migration *transfergwv1beta1.TransferGW,
+	desired *gatewayv1.GRPCRoute,
+) error {
+	route := &gatewayv1.GRPCRoute{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      desired.Name,
+			Namespace: desired.Namespace,
+		},
+	}
+
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
+		if route.Labels == nil {
+			route.Labels = map[string]string{}
+		}
+		route.Labels[managedByLabel] = migration.Name
+		route.Labels[sourceIngressLabel] = desired.Name
+		route.Spec = desired.Spec
+
+		if route.Namespace == migration.Namespace {
+			return controllerutil.SetControllerReference(migration, route, r.Scheme)
+		}
+		return nil
+	})
+	return err
+}
+
+// pruneOrphanedRoutes deletes generated HTTPRoutes and GRPCRoutes whose
+// source Ingress no longer matches the selector.
 func (r *TransferGWReconciler) pruneOrphanedRoutes(
 	ctx context.Context,
 	migration *transfergwv1beta1.TransferGW,
 	desired map[string]struct{},
 ) (int, error) {
-	list := &gatewayv1.HTTPRouteList{}
-	if err := r.List(ctx, list, client.MatchingLabels{managedByLabel: migration.Name}); err != nil {
-		return 0, err
-	}
-
 	pruned := 0
-	for i := range list.Items {
-		route := &list.Items[i]
+
+	httpRoutes := &gatewayv1.HTTPRouteList{}
+	if err := r.List(ctx, httpRoutes, client.MatchingLabels{managedByLabel: migration.Name}); err != nil {
+		return pruned, err
+	}
+	for i := range httpRoutes.Items {
+		route := &httpRoutes.Items[i]
 		if _, keep := desired[route.Namespace+"/"+route.Name]; keep {
 			continue
 		}
@@ -623,6 +668,22 @@ func (r *TransferGWReconciler) pruneOrphanedRoutes(
 		}
 		pruned++
 	}
+
+	grpcRoutes := &gatewayv1.GRPCRouteList{}
+	if err := r.List(ctx, grpcRoutes, client.MatchingLabels{managedByLabel: migration.Name}); err != nil {
+		return pruned, err
+	}
+	for i := range grpcRoutes.Items {
+		route := &grpcRoutes.Items[i]
+		if _, keep := desired[route.Namespace+"/"+route.Name]; keep {
+			continue
+		}
+		if err := r.Delete(ctx, route); err != nil && !apierrors.IsNotFound(err) {
+			return pruned, err
+		}
+		pruned++
+	}
+
 	return pruned, nil
 }
 

@@ -90,6 +90,11 @@ var Translators = map[string]annotation.Translator{
 		"Set connection timeouts with your implementation's traffic policy CRD."),
 	Prefix + "proxy-read-timeout": &annotation.BackendRequestTimeoutTranslator{},
 	Prefix + "proxy-send-timeout": &annotation.BackendRequestTimeoutTranslator{},
+
+	// backend-protocol: GRPC is handled structurally, before this map is even
+	// consulted - see conversion.isGRPCBackend/convertGRPCRoute, which
+	// produce a GRPCRoute instead of an HTTPRoute. This entry only fires for
+	// every other value (HTTPS, AJP, FCGI, ...).
 	Prefix + "backend-protocol": annotation.Unsupported(
 		"Set the backend Service port's appProtocol field instead."),
 

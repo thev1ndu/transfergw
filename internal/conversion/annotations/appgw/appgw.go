@@ -52,6 +52,10 @@ var Translators = map[string]annotation.Translator{
 	Prefix + "backend-hostname": annotation.Unsupported(
 		"Gateway API filters cannot rewrite the Host header; use your implementation's " +
 			"traffic policy CRD instead."),
+	// backend-protocol: GRPC/grpc is handled structurally, before this map is
+	// even consulted - see conversion.isGRPCBackend/convertGRPCRoute, which
+	// produce a GRPCRoute instead of an HTTPRoute. This entry only fires for
+	// every other value.
 	Prefix + "backend-protocol": annotation.Unsupported(
 		"Set the backend Service port's appProtocol field instead."),
 
