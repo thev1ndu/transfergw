@@ -3,7 +3,7 @@
 ## Published Artifacts
 
 ### Container Image
-- **Registry:** GitHub Container Registry (GHCR)
+- **Registry:** Docker Hub
 - **Repository:** `thev1ndu/transfergw`
 - **Tags:** `latest`, git commit SHA, version tags (v*)
 - **Built via:** GitHub Actions workflow on every push to main
@@ -35,6 +35,32 @@ helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
   --create-namespace \
   --version latest
 ```
+
+### Dry Run
+
+Render every resource the chart would create — Namespace, RBAC, Deployment,
+CRD — without touching the cluster or calling the Helm/Kubernetes API:
+
+```bash
+helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
+  --namespace transfergw \
+  --create-namespace \
+  --dry-run=client > sample.yaml
+```
+
+`sample.yaml` then contains the full rendered manifest set, useful for
+reviewing what will be created or diffing against a previous release before
+running `helm install`/`helm upgrade` for real. `helm template` (no cluster
+context needed at all, not even a kubeconfig) produces the same output:
+
+```bash
+helm template transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
+  --namespace transfergw > sample.yaml
+```
+
+Use `--dry-run=server` instead to also have Helm validate the rendered
+manifests against the live API server (requires cluster access) — useful
+for catching schema errors before committing to an install.
 
 ### Deploy with Custom Values
 
