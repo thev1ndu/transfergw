@@ -1,4 +1,4 @@
-# TransferGW Quickstart: nginx Ingress → Envoy Gateway
+# Testing TransferGW on a Cluster: nginx Ingress → Envoy Gateway
 
 A ~15 minute walkthrough that installs TransferGW from its published GitHub package,
 stands up a sample nginx behind an ingress-nginx Ingress, and migrates it to Envoy
@@ -9,7 +9,7 @@ runs against **an existing cluster**.
 
 | Artifact | Location |
 |---|---|
-| Controller image | `ghcr.io/thev1ndu/transfergw:latest` |
+| Controller image | `ghcr.io/thev1ndu/transfergw:sha-4842aa2` |
 | Helm chart | `oci://ghcr.io/thev1ndu/helm-charts/transfergw` version `1.0.0` |
 
 Both are public; no registry login is needed.
@@ -244,17 +244,30 @@ The rest of this guide assumes `eg`.
 ```bash
 helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
   --version 1.0.0 \
-  --namespace transfergw --create-namespace
+  --namespace transfergw --create-namespace \
+  --set image.tag=sha-4842aa2
 ```
 
 The chart creates the `transfergw` namespace, the CRD, RBAC, and a 2-replica controller
-Deployment using `ghcr.io/thev1ndu/transfergw:latest`. On a small or single-node cluster
-you may prefer one replica:
+Deployment.
+
+> **Pin the image tag — don't rely on `latest`.** The chart defaults to
+> `ghcr.io/thev1ndu/transfergw:latest` with `imagePullPolicy: IfNotPresent`. Once a node
+> has cached *any* image called `latest`, it will keep using it and never re-pull. On a
+> node that pulled an earlier build you would silently run stale code — including builds
+> that predate the crash-loop fix in `sha-4842aa2`.
+>
+> `sha-<commit>` tags are immutable, so pinning removes the ambiguity entirely. Check
+> [Packages](https://github.com/thev1ndu/transfergw/pkgs/container/transfergw) for newer
+> tags. `--set image.pullPolicy=Always` also works if you'd rather track `latest`.
+
+On a small or single-node cluster you may prefer one replica:
 
 ```bash
 helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
   --version 1.0.0 \
   --namespace transfergw --create-namespace \
+  --set image.tag=sha-4842aa2 \
   --set replicaCount=1
 ```
 
@@ -266,12 +279,13 @@ kubectl rollout status deployment/transfergw-controller -n transfergw
 kubectl logs -n transfergw deployment/transfergw-controller --tail=20
 ```
 
-The log should end with `starting manager`.
+`rollout status` must report both replicas available, and the log should end with
+`starting manager`. If the pods restart in a loop instead, see
+[controller crash-loops](#controller-crash-loops-on-failed-liveness-probe) below.
 
 > **Chart versioning caveat.** The chart version is not bumped per commit — `1.0.0` is
-> republished on every push to `main`. To pick up newer code, force a `helm upgrade`
-> rather than assuming a new version number. Pin by image digest if you need
-> reproducibility.
+> republished on every push to `main`. Two pushes can therefore ship different content
+> under the same version. Pin the image tag as above for anything reproducible.
 
 ---
 
@@ -570,13 +584,44 @@ Usually a missing or mismatched GatewayClass — confirm `conversion.gatewayClas
 The image is public, so this normally means egress to `ghcr.io` is blocked. Mirror it:
 
 ```bash
-docker pull ghcr.io/thev1ndu/transfergw:latest
-docker tag ghcr.io/thev1ndu/transfergw:latest <your-registry>/transfergw:latest
-docker push <your-registry>/transfergw:latest
+docker pull ghcr.io/thev1ndu/transfergw:sha-4842aa2
+docker tag ghcr.io/thev1ndu/transfergw:sha-4842aa2 <your-registry>/transfergw:sha-4842aa2
+docker push <your-registry>/transfergw:sha-4842aa2
 
 helm upgrade transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
   --version 1.0.0 -n transfergw \
-  --set image.repository=<your-registry>/transfergw
+  --set image.repository=<your-registry>/transfergw \
+  --set image.tag=sha-4842aa2
+```
+
+**Controller crash-loops on failed liveness probe**
+
+Symptom — the pods restart every ~30s, and events show:
+
+```
+Liveness probe failed: Get "http://10.x.x.x:8081/healthz": connect: connection refused
+```
+
+Check the logs. If the manager looks healthy (`Successfully acquired lease`,
+`Starting workers`, `Serving metrics server`) but there is **no line about the health
+probe binding**, you are running a build from before `sha-4842aa2`, where the probe
+listener was never started. The manager works; nothing answers on `:8081`; the kubelet
+kills it.
+
+Almost always a stale cached `latest`. Pin the tag:
+
+```bash
+helm upgrade transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
+  --version 1.0.0 -n transfergw \
+  --set image.tag=sha-4842aa2
+
+kubectl rollout status deployment/transfergw-controller -n transfergw
+```
+
+Confirm which image the pods actually run:
+
+```bash
+kubectl get pods -n transfergw -o jsonpath='{.items[*].spec.containers[*].image}{"\n"}'
 ```
 
 **`helm install` fails with `docker-credential-desktop: executable file not found`**
