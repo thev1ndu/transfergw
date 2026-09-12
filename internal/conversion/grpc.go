@@ -23,15 +23,19 @@ import (
 	"k8s.io/utils/ptr"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
+	"github.com/thev1ndu/transfergw/internal/conversion/annotation/alb"
 	"github.com/thev1ndu/transfergw/internal/conversion/annotation/appgw"
 	"github.com/thev1ndu/transfergw/internal/conversion/annotation/nginx"
 )
 
 // grpcBackendProtocolKeys lists every vendor's backend-protocol annotation.
-// AGIC has no rate-limit annotation but does have this one; nginx has both.
+// AGIC has no rate-limit annotation but does have this one; nginx has both;
+// ALB has this plus backend-protocol-version, which only matters once
+// GRPC is already selected here, so it isn't part of this detection.
 var grpcBackendProtocolKeys = []string{
 	nginx.Prefix + "backend-protocol",
 	appgw.Prefix + "backend-protocol",
+	alb.Prefix + "backend-protocol",
 }
 
 // isGRPCBackend reports whether ing is marked for gRPC backends via either

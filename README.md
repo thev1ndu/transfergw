@@ -88,6 +88,7 @@ controller actually does today versus what's designed but not yet built.
 - [x] 2.3 Azure Application Gateway Ingress Controller (AGIC) annotation coverage
 - [x] 2.4 Rule-level translation (session affinity → `sessionPersistence`, timeout annotations → `timeouts`) alongside filter-level translation, so a translated annotation doesn't have to look like the original mechanism — it has to produce the same effect
 - [x] 2.5 Multi-annotation translation (CORS: `enable-cors` + its `cors-*` siblings combine into one core `HTTPRouteFilterCORS`, instead of each annotation only ever seeing itself in isolation)
+- [x] 2.6 AWS Load Balancer Controller (ALB) annotation coverage (`alb.ingress.kubernetes.io/*`), incl. `backend-protocol: GRPC` producing a `GRPCRoute`
 
 **3. Rollout & safety**
 - [x] 3.1 Percentage-based traffic rollout (immediate, gradual, canary)
@@ -100,7 +101,6 @@ controller actually does today versus what's designed but not yet built.
 - [ ] 4.1 Multi-gateway support (Istio, Kong, cloud LBs)
 - [ ] 4.2 Multi-cluster migrations
 - [ ] 4.3 Slack alerting integration
-- [ ] 4.4 ALB annotation coverage (`alb.ingress.kubernetes.io/*`)
 
 ## License
 

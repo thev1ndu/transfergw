@@ -27,6 +27,7 @@ import (
 	"k8s.io/utils/ptr"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
+	"github.com/thev1ndu/transfergw/internal/conversion/annotation/alb"
 	"github.com/thev1ndu/transfergw/internal/conversion/annotation/appgw"
 	"github.com/thev1ndu/transfergw/internal/conversion/annotation/certmanager"
 	"github.com/thev1ndu/transfergw/internal/conversion/annotation/nginx"
@@ -131,6 +132,7 @@ var vendorRegistries = []map[string]Translator{
 	nginx.Translators,
 	certmanager.Translators,
 	appgw.Translators,
+	alb.Translators,
 }
 
 // vendorPrefixes lists every vendor annotation prefix this engine knows
@@ -141,6 +143,7 @@ var vendorPrefixes = []string{
 	nginx.Prefix,
 	certmanager.Prefix,
 	appgw.Prefix,
+	alb.Prefix,
 }
 
 func isKnownVendorPrefix(annotation string) bool {
