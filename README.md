@@ -27,18 +27,24 @@ local kind cluster.
 TransferGW is under active development. The table below reflects what the
 controller actually does today versus what's designed but not yet built.
 
-| Capability | Status |
-|---|---|
-| Ingress selection (namespace, label, ingress class) | ✅ Available |
-| Ingress → Gateway/HTTPRoute conversion | ✅ Available |
-| nginx & cert-manager annotation translation | ✅ Available |
-| Percentage-based traffic rollout | ✅ Available |
-| Orphaned route cleanup | ✅ Available |
-| Health-based automatic rollback | ✅ Available |
-| Lifecycle hooks (pre/post conversion webhooks) | 🚧 Planned |
-| Multi-gateway support (Istio, Kong, cloud LBs) | 🚧 Planned |
-| Multi-cluster migrations | 🚧 Planned |
-| Alerting integrations (Slack, webhooks) | 🚧 Planned |
+**1. Ingress → Gateway API conversion**
+- [x] 1.1 Ingress selection by namespace, label, and ingress class
+- [x] 1.2 Ingress → Gateway/HTTPRoute conversion
+- [x] 1.3 Orphaned route cleanup
+
+**2. Annotation translation**
+- [x] 2.1 Full ingress-nginx annotation coverage (real filters where Gateway API has one, explicit guidance where it doesn't)
+- [x] 2.2 cert-manager annotation translation
+
+**3. Rollout & safety**
+- [x] 3.1 Percentage-based traffic rollout (immediate, gradual, canary)
+- [x] 3.2 Health-based automatic rollback (Prometheus-backed threshold breach detection)
+
+**4. Planned**
+- [ ] 4.1 Lifecycle hooks (pre/post conversion webhooks)
+- [ ] 4.2 Multi-gateway support (Istio, Kong, cloud LBs)
+- [ ] 4.3 Multi-cluster migrations
+- [ ] 4.4 Alerting integrations (Slack, webhooks)
 
 ## License
 
