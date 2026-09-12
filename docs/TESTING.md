@@ -9,7 +9,7 @@ runs against **an existing cluster**.
 
 | Artifact | Location |
 |---|---|
-| Controller image | `ghcr.io/thev1ndu/transfergw:sha-4842aa2` |
+| Controller image | `thev1ndu/transfergw` on Docker Hub |
 | Helm chart | `oci://ghcr.io/thev1ndu/helm-charts/transfergw` version `1.0.0` |
 
 Both are public; no registry login is needed.
@@ -244,22 +244,24 @@ The rest of this guide assumes `eg`.
 ```bash
 helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
   --version 1.0.0 \
-  --namespace transfergw --create-namespace \
-  --set image.tag=sha-4842aa2
+  --namespace transfergw --create-namespace
 ```
 
 The chart creates the `transfergw` namespace, the CRD, RBAC, and a 2-replica controller
-Deployment.
+Deployment, pulling `thev1ndu/transfergw:latest` from Docker Hub by default with
+`imagePullPolicy: IfNotPresent`.
 
-> **Pin the image tag — don't rely on `latest`.** The chart defaults to
-> `ghcr.io/thev1ndu/transfergw:latest` with `imagePullPolicy: IfNotPresent`. Once a node
-> has cached *any* image called `latest`, it will keep using it and never re-pull. On a
-> node that pulled an earlier build you would silently run stale code — including builds
-> that predate the crash-loop fix in `sha-4842aa2`.
+> **Want a reproducible, pinned image instead of `latest`?** Override the tag:
 >
-> `sha-<commit>` tags are immutable, so pinning removes the ambiguity entirely. Check
-> [Packages](https://github.com/thev1ndu/transfergw/pkgs/container/transfergw) for newer
-> tags. `--set image.pullPolicy=Always` also works if you'd rather track `latest`.
+> ```bash
+> --set image.tag=sha-a8fe786
+> ```
+>
+> `sha-<commit>` tags are immutable — `latest` moves with every push to `main`, so a
+> node that already cached an older `latest` layer can keep running stale code under
+> `IfNotPresent` until it's forced to re-pull. Check
+> [Tags](https://hub.docker.com/r/thev1ndu/transfergw/tags) for available `sha-*` tags,
+> or add `--set image.pullPolicy=Always` if you'd rather always track `latest` fresh.
 
 On a small or single-node cluster you may prefer one replica:
 
@@ -267,7 +269,6 @@ On a small or single-node cluster you may prefer one replica:
 helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
   --version 1.0.0 \
   --namespace transfergw --create-namespace \
-  --set image.tag=sha-4842aa2 \
   --set replicaCount=1
 ```
 
@@ -706,17 +707,19 @@ confirm `conversion.gatewayClass` matches `kubectl get gatewayclass`.
 
 **Controller pod `ImagePullBackOff`**
 
-The image is public, so this normally means egress to `ghcr.io` is blocked. Mirror it:
+The image is public, so this normally means egress to Docker Hub (`registry-1.docker.io`)
+is blocked. The Helm chart itself still pulls from `ghcr.io` (OCI registry), so check
+both if egress is filtered. Mirror the image:
 
 ```bash
-docker pull ghcr.io/thev1ndu/transfergw:sha-4842aa2
-docker tag ghcr.io/thev1ndu/transfergw:sha-4842aa2 <your-registry>/transfergw:sha-4842aa2
-docker push <your-registry>/transfergw:sha-4842aa2
+docker pull thev1ndu/transfergw:latest
+docker tag thev1ndu/transfergw:latest <your-registry>/transfergw:latest
+docker push <your-registry>/transfergw:latest
 
 helm upgrade transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
   --version 1.0.0 -n transfergw \
   --set image.repository=<your-registry>/transfergw \
-  --set image.tag=sha-4842aa2
+  --set image.tag=latest
 ```
 
 **Controller crash-loops on failed liveness probe**
@@ -729,16 +732,16 @@ Liveness probe failed: Get "http://10.x.x.x:8081/healthz": connect: connection r
 
 Check the logs. If the manager looks healthy (`Successfully acquired lease`,
 `Starting workers`, `Serving metrics server`) but there is **no line about the health
-probe binding**, you are running a build from before `sha-4842aa2`, where the probe
-listener was never started. The manager works; nothing answers on `:8081`; the kubelet
-kills it.
+probe binding**, you are running a build from before commit `4842aa2` ("bind the health
+probe server so the controller stays up"), where the probe listener was never started.
+The manager works; nothing answers on `:8081`; the kubelet kills it.
 
-Almost always a stale cached `latest`. Pin the tag:
+Almost always a stale cached `latest`. Pin to any tag published after that fix, e.g.:
 
 ```bash
 helm upgrade transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
   --version 1.0.0 -n transfergw \
-  --set image.tag=sha-4842aa2
+  --set image.tag=sha-a8fe786
 
 kubectl rollout status deployment/transfergw-controller -n transfergw
 ```
