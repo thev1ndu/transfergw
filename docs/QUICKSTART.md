@@ -4,7 +4,8 @@ A ~15 minute walkthrough that installs TransferGW from its published GitHub pack
 stands up a sample nginx behind an ingress-nginx Ingress, and migrates it to Envoy
 Gateway.
 
-Everything here uses the published artifacts — no repository clone, no local build.
+Everything here uses the published artifacts — no repository clone, no local build — and
+runs against **an existing cluster**.
 
 | Artifact | Location |
 |---|---|
@@ -24,35 +25,26 @@ Both are public; no registry login is needed.
 
 ## Prerequisites
 
-- A Kubernetes cluster, 1.26 or newer (kind, minikube, or anything shared)
-- `kubectl` pointed at it
-- `helm` 3.8 or newer (OCI registry support)
+- An existing Kubernetes cluster, 1.26 or newer
+- `kubectl` pointed at it, with **cluster-admin** — the install creates CRDs, a
+  ClusterRole and a ClusterRoleBinding
+- `helm` 3.8 or newer, for OCI registry support
 
-Creating a throwaway kind cluster, if you need one:
+Confirm your context before you start, so nothing lands in the wrong cluster:
 
 ```bash
-cat <<'EOF' > kind-config.yaml
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-  - role: control-plane
-    kubeadmConfigPatches:
-      - |
-        kind: InitConfiguration
-        nodeRegistration:
-          kubeletExtraArgs:
-            node-labels: "ingress-ready=true"
-    extraPortMappings:
-      - containerPort: 80
-        hostPort: 80
-        protocol: TCP
-EOF
-
-kind create cluster --name transfergw-demo --config kind-config.yaml
+kubectl config current-context
+kubectl version -o json | grep -m1 gitVersion
 ```
 
-The `ingress-ready=true` label is required by the kind build of ingress-nginx in step 2 —
-without it that controller pod never schedules.
+Everything is created in three namespaces — `demo`, `transfergw`, and
+`envoy-gateway-system` — plus `ingress-nginx` if you don't already have it. Nothing
+outside those is touched.
+
+> **All HTTP checks in this guide run from inside the cluster** with an explicit `Host:`
+> header, against Service DNS. That means they work identically on EKS, GKE, AKS, on-prem
+> and local clusters, and need no LoadBalancer, no Ingress IP, and no DNS record. The
+> hostname `demo.test` is never resolved — `.test` is reserved by IANA precisely for this.
 
 ---
 
@@ -110,22 +102,36 @@ kubectl rollout status deployment/sample-nginx -n demo
 
 ---
 
-## 2. Install ingress-nginx and create the Ingress
+## 2. Ensure ingress-nginx is present
+
+Your cluster may already run it. Check before installing anything:
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+kubectl get ingressclass
+```
+
+If an `nginx` class is listed, **skip the install** and go straight to creating the
+Ingress below. Otherwise:
+
+```bash
+helm upgrade --install ingress-nginx ingress-nginx \
+  --repo https://kubernetes.github.io/ingress-nginx \
+  --namespace ingress-nginx --create-namespace
 
 kubectl wait --namespace ingress-nginx \
   --for=condition=Ready pod \
   --selector=app.kubernetes.io/component=controller \
-  --timeout=180s
+  --timeout=300s
 ```
 
-> On a managed cluster (EKS/GKE/AKS) use the `cloud` provider manifest instead of `kind`.
+> On a cluster with no LoadBalancer provider the controller Service stays `<pending>` for
+> an external IP. That is fine — every check in this guide goes through the Service's
+> cluster IP, not an external one.
 
-Now the Ingress. Two details matter to TransferGW: the **`migrate: "true"` label**, which
-the migration selects on, and the **rewrite-target annotation**, which exercises
-annotation translation.
+### Create the Ingress
+
+Two details matter to TransferGW: the **`migrate: "true"` label**, which the migration
+selects on, and the **rewrite-target annotation**, which exercises annotation translation.
 
 ```bash
 cat <<'EOF' | kubectl apply -f -
@@ -141,7 +147,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: demo.localtest.me
+    - host: demo.test
       http:
         paths:
           - path: /
@@ -152,14 +158,29 @@ spec:
                 port:
                   number: 80
 EOF
+
+kubectl get ingress -n demo
 ```
 
-Confirm the Ingress serves traffic. `localtest.me` resolves to `127.0.0.1`, so no
-`/etc/hosts` edit is needed on kind:
+### Establish the baseline
+
+Resolve the ingress controller Service, then send a request through it from inside the
+cluster:
 
 ```bash
-curl -s -o /dev/null -w 'ingress: %{http_code}\n' http://demo.localtest.me
+ING_NS=ingress-nginx
+ING_SVC=$(kubectl get svc -n $ING_NS \
+  -l app.kubernetes.io/component=controller \
+  -o jsonpath='{.items[0].metadata.name}')
+
+kubectl run curl-ingress --rm -i --restart=Never -n demo \
+  --image=curlimages/curl:8.10.1 -- \
+  curl -s -o /dev/null -w 'ingress: %{http_code}\n' \
+  -H 'Host: demo.test' "http://${ING_SVC}.${ING_NS}.svc.cluster.local"
 ```
+
+> If your cluster already had ingress-nginx in a different namespace, set `ING_NS`
+> accordingly — `kubectl get pods -A | grep ingress-nginx` will find it.
 
 Expect `ingress: 200`. **This is the "before" state.** It must keep returning 200 for the
 rest of the walkthrough — if it ever stops, the migration has disturbed something it
@@ -190,7 +211,11 @@ install them explicitly and re-run the wait:
 kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.6.2/standard-install.yaml
 ```
 
-Now make sure a GatewayClass exists. Check first:
+> **If the cluster already has a Gateway API implementation** (Istio, Contour, NGINX
+> Gateway Fabric), you can skip Envoy Gateway entirely and use that controller's
+> GatewayClass instead. Just substitute its name in step 5.
+
+Now make sure a GatewayClass exists:
 
 ```bash
 kubectl get gatewayclass
@@ -223,9 +248,8 @@ helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
 ```
 
 The chart creates the `transfergw` namespace, the CRD, RBAC, and a 2-replica controller
-Deployment using `ghcr.io/thev1ndu/transfergw:latest`.
-
-On a single-node cluster you may prefer one replica:
+Deployment using `ghcr.io/thev1ndu/transfergw:latest`. On a small or single-node cluster
+you may prefer one replica:
 
 ```bash
 helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
@@ -245,9 +269,9 @@ kubectl logs -n transfergw deployment/transfergw-controller --tail=20
 The log should end with `starting manager`.
 
 > **Chart versioning caveat.** The chart version is not bumped per commit — `1.0.0` is
-> republished on every push to `main`. To pick up newer code, re-run `helm upgrade` with
-> `--devel`-style force rather than assuming a new version number. Pin by image digest if
-> you need reproducibility.
+> republished on every push to `main`. To pick up newer code, force a `helm upgrade`
+> rather than assuming a new version number. Pin by image digest if you need
+> reproducibility.
 
 ---
 
@@ -282,6 +306,10 @@ EOF
 `mode: immediate` completes in one pass, which is what you want for a test. Use
 `mode: canary` to watch the percentage climb over time instead — see
 [Canary mode](#canary-mode).
+
+> **Scoping note.** `selector.namespaces` is restricted to `demo` here on purpose. Leaving
+> it empty selects **every namespace in the cluster**, which on a shared cluster would
+> generate routes for Ingresses you did not intend to touch. Keep it explicit.
 
 Check the result:
 
@@ -324,7 +352,7 @@ spec:
     - name: demo-migration-gateway
       namespace: transfergw        # qualified, since the Gateway is elsewhere
   hostnames:
-    - demo.localtest.me            # from spec.rules[].host
+    - demo.test                    # from spec.rules[].host
   rules:
     - matches:
         - path:
@@ -378,29 +406,34 @@ kubectl get gateway demo-migration-gateway -n transfergw \
   -o jsonpath='{.status.conditions[?(@.type=="Programmed")].status}{"\n"}'
 ```
 
-Expect `True`. Then send a request through Envoy rather than through ingress-nginx:
+Expect `True`. Envoy Gateway creates a Service for each Gateway; find it and send a
+request through it:
 
 ```bash
-GW_IP=$(kubectl get svc -n envoy-gateway-system \
+GW_SVC=$(kubectl get svc -n envoy-gateway-system \
   -l gateway.envoyproxy.io/owning-gateway-name=demo-migration-gateway \
-  -o jsonpath='{.items[0].spec.clusterIP}')
+  -o jsonpath='{.items[0].metadata.name}')
 
-kubectl run curl-gw --rm -i --restart=Never -n demo \
+kubectl run curl-gateway --rm -i --restart=Never -n demo \
   --image=curlimages/curl:8.10.1 -- \
   curl -s -o /dev/null -w 'gateway: %{http_code}\n' \
-  -H 'Host: demo.localtest.me' "http://$GW_IP"
+  -H 'Host: demo.test' "http://${GW_SVC}.envoy-gateway-system.svc.cluster.local"
 ```
 
 Expect `gateway: 200`.
 
-**The acceptance check** — both paths serving simultaneously:
+**The acceptance check** — re-run the baseline from step 2 and confirm both paths serve
+at once:
 
 ```bash
-curl -s -o /dev/null -w 'ingress: %{http_code}\n' http://demo.localtest.me
+kubectl run curl-ingress --rm -i --restart=Never -n demo \
+  --image=curlimages/curl:8.10.1 -- \
+  curl -s -o /dev/null -w 'ingress: %{http_code}\n' \
+  -H 'Host: demo.test' "http://${ING_SVC}.${ING_NS}.svc.cluster.local"
 ```
 
 Both `200` means the migration succeeded: the Gateway API path works and the Ingress was
-never disturbed. Cutting traffic over is now a DNS/load-balancer change on your side.
+never disturbed. Cutting traffic over is now a DNS or load-balancer change on your side.
 
 ---
 
@@ -482,6 +515,10 @@ failure. They're the cases most likely to bite on a real Ingress.
 | `nginx.ingress.kubernetes.io/auth-url` | Warning, same reason. |
 | A TLS block | Info note; the Gateway gets an HTTPS listener per distinct secret. |
 
+Once the sample passes, the more useful test is pointing a migration at one of your own
+namespaces — with `rollout.paused: true` first if you want to inspect before anything is
+created.
+
 ---
 
 ## Known limitations
@@ -542,19 +579,51 @@ helm upgrade transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
   --set image.repository=<your-registry>/transfergw
 ```
 
+**`helm install` fails with `docker-credential-desktop: executable file not found`**
+
+Helm reads `~/.docker/config.json` for registry credentials. If that file sets
+`"credsStore": "desktop"` but Docker Desktop isn't installed or isn't on your `PATH`, the
+pull fails before it ever reaches the network — even though these packages are public and
+need no authentication. Common on machines that once had Docker Desktop.
+
+Unblock without touching your config:
+
+```bash
+export DOCKER_CONFIG=$(mktemp -d) && echo '{"auths":{}}' > $DOCKER_CONFIG/config.json
+```
+
+Or fix it permanently by removing the `credsStore` line from `~/.docker/config.json`. If
+`auths` is empty, that line is doing nothing but breaking Helm.
+
+**`curl` pod fails with a NetworkPolicy denial**
+
+Clusters with default-deny policies will block the in-cluster checks. Either add a
+temporary egress allowance for the `demo` namespace, or run the checks with
+`kubectl port-forward` against the two Services instead.
+
 ---
 
 ## Cleanup
 
+Removes only what this guide created:
+
 ```bash
-kubectl delete tgw --all -A
+kubectl delete tgw --all -n transfergw
 helm uninstall transfergw -n transfergw
 helm uninstall eg -n envoy-gateway-system
-kubectl delete namespace demo transfergw
-
-# or, if you made a throwaway cluster:
-kind delete cluster --name transfergw-demo
+kubectl delete namespace demo transfergw envoy-gateway-system
+kubectl delete crd transfergws.transfergw.t-1.dev
 ```
+
+Only if **you** installed ingress-nginx in step 2 — leave it alone if it was already
+there:
+
+```bash
+helm uninstall ingress-nginx -n ingress-nginx
+kubectl delete namespace ingress-nginx
+```
+
+The Gateway API CRDs are left in place, since other workloads may depend on them.
 
 ---
 

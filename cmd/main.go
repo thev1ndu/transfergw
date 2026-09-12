@@ -81,8 +81,9 @@ func main() {
 		WebhookServer: webhook.NewServer(webhook.Options{
 			Port: webhookPort,
 		}),
-		LeaderElection:   enableLeaderElection,
-		LeaderElectionID: "transfergw.example.com",
+		HealthProbeBindAddress: probeAddr,
+		LeaderElection:         enableLeaderElection,
+		LeaderElectionID:       "transfergw.t-1.dev",
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
