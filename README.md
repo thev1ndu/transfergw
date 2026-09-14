@@ -37,6 +37,13 @@ helm install transfergw oci://ghcr.io/thev1ndu/helm-charts/transfergw \
   --version 1.0.0 --namespace transfergw --create-namespace
 ```
 
+```bash
+helm upgrade transfergw transfergw/transfergw \
+  --namespace transfergw \
+  --reuse-values \
+  --set enableWebhooks=false
+```
+
 ### Run a migration
 
 ```bash
